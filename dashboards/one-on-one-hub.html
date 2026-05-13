@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>1:1 Hub</title>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+  <!-- React + Babel (no build step needed) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #090e1a; font-family: 'DM Sans', system-ui, sans-serif; }
+    button { font-family: inherit; }
+    select, input, textarea { font-family: inherit; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #1e2d45; border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+/* ════════════════════════════════════════════════════════════════════════════
+   FIREBASE CONFIGURATION
+   ─────────────────────────────────────────────────────────────────────────
+   SETUP STEPS (takes ~15 minutes, no coding required):
+
+   1. Go to https://console.firebase.google.com and sign in with a Google account
+   2. Click "Add project" → name it (e.g. "One on One Hub") → Continue → Create project
+   3. In your project dashboard, click the </> (web) icon to add a web app
+   4. Give it a nickname (e.g. "hub") → Register app
+   5. Copy the firebaseConfig object shown and paste it below (replace everything
+      between the curly braces)
+   6. Back in the left sidebar: Build → Realtime Database → Create database
+      → Choose your nearest location → Start in TEST MODE → Enable
+   7. Save this HTML file, then drag it onto https://app.netlify.com/drop
+   8. Share the Netlify URL with your team
+═══════════════════════════════════════════════════════════════════════════ */
+const firebaseConfig = {
+  apiKey: "AIzaSyDyNhJuNodaB4Js_ASYZg_JdB5-XETF8J8",
+  authDomain: "one-on-one-hub.firebaseapp.com",
+  projectId: "one-on-one-hub",
+  storageBucket: "one-on-one-hub.firebasestorage.app",
+  messagingSenderId: "509213049363",
+  appId: "1:509213049363:web:28d99510cb0fab7ad175e6",
+  measurementId: "G-53V3P2K3QG"
+};
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+const { useState, useEffect, useCallback } = React;
+
+/* ── Firebase helpers ────────────────────────────────────────────────────── */
+let db = null;
+const ROOT = 'o1o';
+
+const initFirebase = () => {
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+const dbGet = async path => {
+  if (!db) return null;
+  const snap = await db.ref(`${ROOT}/${path}`).once('value');
+  return snap.val();
+};
+
+const dbSet = async (path, val) => {
+  if (!db) return;
+  await db.ref(`${ROOT}/${path}`).set(val);
+};
+
+const dbListen = (path, cb) => {
+  if (!db) return () => {};
+  const ref = db.ref(`${ROOT}/${path}`);
+  const handler = snap => cb(snap.val());
+  ref.on('value', handler);
+  return () => ref.off('value', handler);
+};
+
+const toArr = v => {
+  if (!v) return [];
+  if (Array.isArray(v)) return v;
+  return Object.values(v);
+};
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+const uid  = () => Math.random().toString(36).slice(2, 9);
+const fmt  = d  => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const hsh  = s  => { let h = 5381; for (let i = 0; i < s.length; i++) h = (h*33)^s.charCodeAt(i); return (h>>>0).toString(16); };
+const ini  = n  => (n||'?').split(' ').map(x => x[0]||'').join('').slice(0,2).toUpperCase();
+
+/* ── Constants ───────────────────────────────────────────────────────────── */
+const DEFAULT_PIN = '1234';
+
+const CATS = [
+  { id: 'career',   label: 'Career Growth',             color: '#34d399', emoji: '🚀' },
+  { id: 'coaching', label: 'Coaching & Problem Solving', color: '#60a5fa', emoji: '🧠' },
+  { id: 'feedback', label: 'Feedback & Calibration',    color: '#fb923c', emoji: '💬' },
+  { id: 'connect',  label: 'Human Connection',          color: '#c084fc', emoji: '🤝' },
+  { id: 'air',      label: 'Clearing the Air',          color: '#facc15', emoji: '💨' },
+  { id: 'other',    label: 'Other',                     color: '#94a3b8', emoji: '📌' },
+];
+const getCat = id => CATS.find(c => c.id === id) ?? CATS[5];
+
+const SEEDS = {
+  m1:  { id:'m1',  name:'Randy Mueller',  pc:'7821', active:true },
+  m2:  { id:'m2',  name:'Amy Jenkins',    pc:'4563', active:true },
+  m3:  { id:'m3',  name:'Team Member 3',  pc:'2941', active:true },
+  m4:  { id:'m4',  name:'Team Member 4',  pc:'6082', active:true },
+  m5:  { id:'m5',  name:'Team Member 5',  pc:'3157', active:true },
+  m6:  { id:'m6',  name:'Team Member 6',  pc:'8394', active:true },
+  m7:  { id:'m7',  name:'Team Member 7',  pc:'5216', active:true },
+  m8:  { id:'m8',  name:'Team Member 8',  pc:'9047', active:true },
+  m9:  { id:'m9',  name:'Team Member 9',  pc:'1683', active:true },
+  m10: { id:'m10', name:'Team Member 10', pc:'7529', active:true },
+};
+
+/* ── Theme ───────────────────────────────────────────────────────────────── */
+const bg   = '#090e1a';
+const s1   = '#111827';
+const s2   = '#162030';
+const s3   = '#1e2d42';
+const bdr  = '#1e2d45';
+const acc  = '#f59e0b';
+const txt  = '#e2e8f0';
+const mut  = '#5a7290';
+const errC = '#f87171';
+const okC  = '#34d399';
+const F    = "'DM Sans', system-ui, sans-serif";
+const M    = "'Space Mono', monospace";
+
+const inp = {
+  background:s1, border:`1px solid ${bdr}`, borderRadius:8,
+  color:txt, padding:'10px 14px', fontFamily:F, fontSize:14,
+  outline:'none', width:'100%', boxSizing:'border-box',
+};
+const mkBtn = (on=true) => ({
+  padding:'10px 22px', borderRadius:8, border:'none',
+  background: on ? acc : s3, color: on ? '#000' : mut,
+  fontFamily:M, fontSize:12, letterSpacing:1,
+  cursor: on ? 'pointer' : 'default', opacity: on ? 1 : 0.65,
+  transition:'all .15s',
+});
+const ghost = {
+  background:'none', border:`1px solid ${bdr}`, borderRadius:6,
+  color:mut, padding:'6px 14px', fontFamily:M, fontSize:12, cursor:'pointer',
+};
+
+/* ════════════════════════════════════════════════════════════════════════════
+   COMPONENTS
+════════════════════════════════════════════════════════════════════════════ */
+
+function SetupScreen() {
+  return (
+    <div style={{ minHeight:'100vh', background:bg, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <div style={{ maxWidth:520, width:'100%' }}>
+        <div style={{ fontFamily:M, fontSize:28, color:acc, letterSpacing:3, marginBottom:8 }}>1:1 HUB</div>
+        <div style={{ fontSize:14, color:errC, fontFamily:M, marginBottom:28, letterSpacing:1 }}>⚠ FIREBASE NOT CONFIGURED</div>
+        <div style={{ background:s2, borderRadius:12, border:`1px solid ${bdr}`, padding:28, display:'flex', flexDirection:'column', gap:18 }}>
+          <div style={{ fontFamily:M, fontSize:12, color:acc, letterSpacing:2, textTransform:'uppercase' }}>Setup Instructions</div>
+          {[
+            ['1','Go to console.firebase.google.com and sign in with Google'],
+            ['2','Click "Add project" → name it → Create project'],
+            ['3','Click the </> (Web) icon → nickname your app → Register app'],
+            ['4','Copy the firebaseConfig values shown on screen'],
+            ['5','Open this HTML file in a text editor'],
+            ['6','Paste each value into the firebaseConfig section near the top'],
+            ['7','Back in Firebase: Build → Realtime Database → Create database → Test mode'],
+            ['8','Save the file, then drag it to app.netlify.com/drop'],
+            ['9','Share the Netlify URL with your team'],
+          ].map(([n, s]) => (
+            <div key={n} style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
+              <div style={{ width:26, height:26, borderRadius:6, background:acc, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:M, fontSize:12, fontWeight:700, color:'#000', flexShrink:0 }}>{n}</div>
+              <div style={{ fontSize:14, color:txt, lineHeight:1.6, paddingTop:3 }}>{s}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop:20, fontSize:12, color:mut, lineHeight:1.8 }}>
+          Need help? Ask Claude: <span style={{ color:acc, fontFamily:M }}>"Help me set up Firebase for my 1:1 Hub HTML file"</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NumPad({ value, onChange, onSubmit, label, error, hint }) {
+  const press = d => { if (value.length < 4) onChange(value + d); };
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:20 }}>
+      <div style={{ fontSize:11, color:mut, letterSpacing:3, textTransform:'uppercase', fontFamily:M }}>{label}</div>
+      <div style={{ display:'flex', gap:18 }}>
+        {[0,1,2,3].map(i => (
+          <div key={i} style={{ width:16, height:16, borderRadius:'50%', background:value.length>i?acc:'transparent', border:`2px solid ${value.length>i?acc:bdr}`, transition:'all .2s' }} />
+        ))}
+      </div>
+      {error && <div style={{ color:errC, fontSize:13, fontFamily:M }}>{error}</div>}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, width:228 }}>
+        {[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map((k,i) => (
+          <button key={i}
+            onClick={() => k==='⌫' ? onChange(value.slice(0,-1)) : k!=='' ? press(String(k)) : null}
+            disabled={k===''}
+            style={{ height:62, borderRadius:8, border:`1px solid ${k===''?'transparent':bdr}`, background:k===''?'transparent':s2, color:k==='⌫'?mut:txt, fontSize:k==='⌫'?20:22, fontFamily:k==='⌫'?F:M, cursor:k===''?'default':'pointer' }}
+            onMouseOver={e => { if(k!=='') e.currentTarget.style.background=s3; }}
+            onMouseOut={e =>  { if(k!=='') e.currentTarget.style.background=s2; }}
+          >{k}</button>
+        ))}
+      </div>
+      <button onClick={onSubmit} disabled={value.length<4} style={{ ...mkBtn(value.length===4), width:228, height:48, fontSize:13, letterSpacing:2 }}>ENTER</button>
+      {hint && <div style={{ color:mut, fontSize:11, textAlign:'center', fontFamily:M, maxWidth:228, lineHeight:1.7 }}>{hint}</div>}
+    </div>
+  );
+}
+
+function Avatar({ name, size=40 }) {
+  return (
+    <div style={{ width:size, height:size, borderRadius:size*0.22, background:s3, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:M, fontSize:size*0.34, fontWeight:700, color:acc, flexShrink:0 }}>
+      {ini(name)}
+    </div>
+  );
+}
+
+function TopicCard({ topic, onCheck, onDelete, isManager }) {
+  const c = getCat(topic.category);
+  const done = topic.status === 'discussed';
+  const canDelete = isManager || topic.addedBy === 'employee';
+  return (
+    <div style={{ borderRadius:8, border:`1px solid ${done?bdr:c.color+'44'}`, background:done?s1:s2, padding:'13px 16px', opacity:done?.5:1, transition:'all .2s' }}>
+      <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+        <button onClick={() => onCheck(topic)} style={{ marginTop:3, width:20, height:20, borderRadius:4, flexShrink:0, border:`2px solid ${done?okC:c.color}`, background:done?okC:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:'#000' }}>
+          {done && '✓'}
+        </button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+            <span style={{ fontSize:14, fontWeight:500, textDecoration:done?'line-through':'none', color:done?mut:txt }}>{topic.title}</span>
+            <span style={{ fontSize:10, padding:'2px 8px', borderRadius:99, background:c.color+'22', color:c.color, fontFamily:M }}>{c.emoji} {c.label}</span>
+            {!isManager && topic.addedBy==='manager' && (
+              <span style={{ fontSize:10, padding:'2px 8px', borderRadius:99, background:acc+'22', color:acc, fontFamily:M }}>from manager</span>
+            )}
+          </div>
+          {topic.notes && <div style={{ fontSize:12, color:mut, marginTop:5, lineHeight:1.55 }}>{topic.notes}</div>}
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:5, flexShrink:0 }}>
+          <span style={{ fontSize:11, color:mut, fontFamily:M }}>{fmt(topic.createdAt)}</span>
+          {canDelete && <button onClick={() => onDelete(topic)} style={{ background:'none', border:'none', color:mut, cursor:'pointer', fontSize:18, padding:0, lineHeight:1 }}>×</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddTopicForm({ onAdd, onCancel, defaultMemberId, membersList }) {
+  const [title, setTitle] = useState('');
+  const [catId, setCatId] = useState('other');
+  const [notes, setNotes] = useState('');
+  const [mbrId, setMbrId] = useState(defaultMemberId || '');
+  const ok = title.trim() && mbrId;
+  const submit = () => { if (!ok) return; onAdd({ title:title.trim(), category:catId, notes:notes.trim(), memberId:mbrId }); };
+  return (
+    <div style={{ background:s2, borderRadius:10, border:`1px solid ${bdr}`, padding:20, display:'flex', flexDirection:'column', gap:13 }}>
+      <div style={{ fontSize:11, fontFamily:M, color:acc, letterSpacing:2, textTransform:'uppercase' }}>New Topic</div>
+      {membersList && !defaultMemberId && (
+        <select value={mbrId} onChange={e => setMbrId(e.target.value)} style={{ ...inp, color:mbrId?txt:mut }}>
+          <option value="">— Select team member —</option>
+          {membersList.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+      )}
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Topic title…" style={inp} autoFocus onKeyDown={e => e.key==='Enter' && submit()} />
+      <select value={catId} onChange={e => setCatId(e.target.value)} style={inp}>
+        {CATS.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+      </select>
+      <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Context or notes (optional)…" style={{ ...inp, resize:'vertical', minHeight:70 }} />
+      <div style={{ display:'flex', gap:10 }}>
+        <button onClick={submit} style={{ ...mkBtn(!!ok), flex:1, height:42 }}>ADD TOPIC</button>
+        <button onClick={onCancel} style={{ ...ghost, height:42, width:90 }}>CANCEL</button>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MAIN APP
+════════════════════════════════════════════════════════════════════════════ */
+function App() {
+  const [configured] = useState(() => firebaseConfig.apiKey !== 'PASTE_YOUR_apiKey_HERE' && initFirebase());
+
+  const [page, setPage]       = useState('landing');
+  const [cfg, setCfg]         = useState(null);
+  const [members, setMembers] = useState([]);
+  const [topics, setTopics]   = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Auth
+  const [pin, setPin]       = useState('');
+  const [pinErr, setPinErr] = useState('');
+  const [selMbr, setSelMbr] = useState('');
+  const [empPin, setEmpPin] = useState('');
+  const [empErr, setEmpErr] = useState('');
+  const [me, setMe]         = useState(null);
+
+  // Mgr nav
+  const [tab, setTab]             = useState('overview');
+  const [focusMbr, setFocusMbr]   = useState(null);
+  const [filterMbr, setFilterMbr] = useState('all');
+  const [showForm, setShowForm]   = useState(false);
+  const [formMbrId, setFormMbrId] = useState(null);
+  const [showDone, setShowDone]   = useState(false);
+
+  // Settings
+  const [np1, setNp1]           = useState('');
+  const [np2, setNp2]           = useState('');
+  const [pinMsg, setPinMsg]     = useState('');
+  const [addName, setAddName]   = useState('');
+  const [addPc, setAddPc]       = useState('');
+  const [editId, setEditId]     = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editPc, setEditPc]     = useState('');
+
+  /* ── Init ─────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    const s = document.createElement('style');
+    s.textContent = "@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');";
+    document.head.appendChild(s);
+
+    if (!configured) { setLoading(false); return; }
+
+    // Config
+    dbGet('config').then(c => {
+      if (!c) { c = { pinHash: hsh(DEFAULT_PIN) }; dbSet('config', c); }
+      setCfg(c);
+    });
+
+    // Members (one-time)
+    dbGet('members').then(raw => {
+      if (!raw) { dbSet('members', SEEDS); setMembers(Object.values(SEEDS)); }
+      else setMembers(toArr(raw));
+      setLoading(false);
+    });
+
+    // Topics (real-time — updates on any device)
+    const unsub = dbListen('topics', raw => setTopics(toArr(raw)));
+    return unsub;
+  }, []);
+
+  /* ── Mutations ────────────────────────────────────────────────────────── */
+  const saveMbr = async m => {
+    const obj = {}; m.forEach(x => { obj[x.id] = x; });
+    setMembers(m);
+    await dbSet('members', obj);
+  };
+
+  const saveTpc = async t => {
+    const obj = {}; t.forEach(x => { obj[x.id] = x; });
+    await dbSet('topics', obj); // real-time listener handles state update
+  };
+
+  const addTopic = async ({ title, category, notes, memberId }) => {
+    const t = { id:uid(), memberId, title, category, notes, addedBy:page==='manager'?'manager':'employee', status:'open', createdAt:new Date().toISOString(), discussedAt:null };
+    await saveTpc([t, ...topics]);
+    setShowForm(false); setFormMbrId(null);
+  };
+
+  const toggleTopic = async t => {
+    await saveTpc(topics.map(x => x.id!==t.id ? x : { ...x, status:x.status==='discussed'?'open':'discussed', discussedAt:x.status==='open'?new Date().toISOString():null }));
+  };
+
+  const deleteTopic = async t => { await saveTpc(topics.filter(x => x.id!==t.id)); };
+
+  const addMember = async () => {
+    if (!addName.trim() || addPc.length!==4) return;
+    await saveMbr([...members, { id:uid(), name:addName.trim(), pc:addPc, active:true }]);
+    setAddName(''); setAddPc('');
+  };
+
+  const archiveMember = async id => { await saveMbr(members.map(m => m.id===id?{...m,active:false}:m)); };
+  const restoreMember = async id => { await saveMbr(members.map(m => m.id===id?{...m,active:true }:m)); };
+
+  const saveEdit = async () => {
+    if (!editId || !editName.trim()) return;
+    const orig = members.find(m => m.id===editId);
+    await saveMbr(members.map(m => m.id===editId?{...m, name:editName.trim(), pc:editPc.length===4?editPc:orig?.pc}:m));
+    setEditId(null); setEditName(''); setEditPc('');
+  };
+
+  const changePin = async () => {
+    if (np1.length!==4 || np1!==np2) { setPinMsg('PINs must match and be 4 digits'); return; }
+    const updated = { ...cfg, pinHash:hsh(np1) };
+    await dbSet('config', updated); setCfg(updated);
+    setNp1(''); setNp2(''); setPinMsg('✓ PIN updated');
+    setTimeout(() => setPinMsg(''), 3000);
+  };
+
+  /* ── Derived ──────────────────────────────────────────────────────────── */
+  const active     = members.filter(m => m.active);
+  const mbrTopics  = id => topics.filter(t => t.memberId===id);
+  const openTopics = id => mbrTopics(id).filter(t => t.status==='open');
+  const doneTopics = id => mbrTopics(id).filter(t => t.status==='discussed');
+
+  const logout = () => {
+    setPage('landing'); setPin(''); setEmpPin(''); setMe(null); setSelMbr('');
+    setPinErr(''); setEmpErr(''); setTab('overview'); setFocusMbr(null);
+    setShowForm(false); setFormMbrId(null);
+  };
+
+  /* ── Guards ───────────────────────────────────────────────────────────── */
+  if (!configured) return <SetupScreen />;
+
+  if (loading) return (
+    <div style={{ minHeight:'100vh', background:bg, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:M, color:mut, fontSize:13, letterSpacing:2 }}>
+      LOADING…
+    </div>
+  );
+
+  /* ════════════════════════════════════════════════════════════════════════
+     LANDING
+  ══════════════════════════════════════════════════════════════════════════ */
+  if (page==='landing') return (
+    <div style={{ minHeight:'100vh', background:bg, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <div style={{ maxWidth:400, width:'100%' }}>
+        <div style={{ textAlign:'center', marginBottom:52 }}>
+          <div style={{ fontFamily:M, fontSize:32, fontWeight:700, color:acc, letterSpacing:4 }}>1:1 HUB</div>
+          <div style={{ fontSize:13, color:mut, marginTop:10, lineHeight:1.8 }}>Career growth · Coaching · Feedback<br />Human connection · Clear the air</div>
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {[
+            { icon:'🔐', label:'Manager Access', sub:'Full dashboard · all team members', go:'mgr-login' },
+            { icon:'👤', label:'Team Member',    sub:'Your 1:1 topics only',               go:'emp-login' },
+          ].map(r => (
+            <button key={r.go} onClick={() => setPage(r.go)} style={{ padding:'20px 24px', borderRadius:12, background:s2, border:`1px solid ${bdr}`, color:txt, cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', gap:18, transition:'all .2s' }}
+              onMouseOver={e => { e.currentTarget.style.borderColor=acc+'88'; e.currentTarget.style.background=s3; }}
+              onMouseOut={e =>  { e.currentTarget.style.borderColor=bdr;      e.currentTarget.style.background=s2; }}>
+              <span style={{ fontSize:30 }}>{r.icon}</span>
+              <div style={{ fontFamily:M }}>
+                <div style={{ fontSize:15, fontWeight:700 }}>{r.label}</div>
+                <div style={{ fontSize:12, color:mut, marginTop:3 }}>{r.sub}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ════════════════════════════════════════════════════════════════════════
+     MANAGER LOGIN
+  ══════════════════════════════════════════════════════════════════════════ */
+  if (page==='mgr-login') return (
+    <div style={{ minHeight:'100vh', background:bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <button onClick={() => { setPage('landing'); setPin(''); setPinErr(''); }} style={{ position:'absolute', top:24, left:24, ...ghost }}>← Back</button>
+      <div style={{ fontFamily:M, fontSize:15, color:acc, letterSpacing:4, marginBottom:40, fontWeight:700 }}>MANAGER LOGIN</div>
+      <NumPad value={pin} onChange={v => { setPin(v); setPinErr(''); }}
+        onSubmit={() => {
+          if (hsh(pin)===cfg?.pinHash) { setPage('manager'); setPin(''); setPinErr(''); }
+          else { setPinErr('Incorrect PIN'); setPin(''); }
+        }}
+        label="Enter your PIN" error={pinErr}
+        hint={`Default PIN is ${DEFAULT_PIN} — change it in Settings after your first login`}
+      />
+    </div>
+  );
+
+  /* ════════════════════════════════════════════════════════════════════════
+     EMPLOYEE LOGIN
+  ══════════════════════════════════════════════════════════════════════════ */
+  if (page==='emp-login') return (
+    <div style={{ minHeight:'100vh', background:bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, gap:30 }}>
+      <button onClick={() => { setPage('landing'); setEmpPin(''); setEmpErr(''); setSelMbr(''); }} style={{ position:'absolute', top:24, left:24, ...ghost }}>← Back</button>
+      <div style={{ fontFamily:M, fontSize:15, color:txt, letterSpacing:4, fontWeight:700 }}>TEAM MEMBER</div>
+      <div style={{ width:'100%', maxWidth:280 }}>
+        <div style={{ fontSize:10, color:mut, fontFamily:M, letterSpacing:3, textTransform:'uppercase', marginBottom:8 }}>Your Name</div>
+        <select value={selMbr} onChange={e => { setSelMbr(e.target.value); setEmpPin(''); setEmpErr(''); }}
+          style={{ ...inp, color:selMbr?txt:mut, border:`1px solid ${selMbr?acc:bdr}` }}>
+          <option value="">— Select your name —</option>
+          {active.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+      </div>
+      {selMbr && (
+        <NumPad value={empPin} onChange={v => { setEmpPin(v); setEmpErr(''); }}
+          onSubmit={() => {
+            const mbr = members.find(m => m.id===selMbr);
+            if (mbr && mbr.pc===empPin) { setMe(mbr); setPage('employee'); setEmpErr(''); setEmpPin(''); }
+            else { setEmpErr('Incorrect passcode'); setEmpPin(''); }
+          }}
+          label="Enter your passcode" error={empErr}
+        />
+      )}
+    </div>
+  );
+
+  /* ════════════════════════════════════════════════════════════════════════
+     EMPLOYEE VIEW
+  ══════════════════════════════════════════════════════════════════════════ */
+  if (page==='employee' && me) {
+    const myOpen = openTopics(me.id);
+    const myDone = doneTopics(me.id);
+    return (
+      <div style={{ minHeight:'100vh', background:bg, color:txt, fontFamily:F }}>
+        <div style={{ background:s1, borderBottom:`1px solid ${bdr}`, padding:'14px 24px', display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, zIndex:10 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+            <span style={{ fontFamily:M, fontSize:14, fontWeight:700, color:acc, letterSpacing:2 }}>1:1 HUB</span>
+            <span style={{ color:bdr }}>|</span>
+            <span style={{ fontSize:14 }}>{me.name}</span>
+          </div>
+          <button onClick={logout} style={ghost}>LOGOUT</button>
+        </div>
+        <div style={{ maxWidth:640, margin:'0 auto', padding:24 }}>
+          <div style={{ display:'flex', gap:14, marginBottom:28 }}>
+            {[{l:'Open Topics',v:myOpen.length,c:acc},{l:'Discussed',v:myDone.length,c:okC}].map(s => (
+              <div key={s.l} style={{ flex:1, background:s2, borderRadius:10, padding:'16px 20px', border:`1px solid ${bdr}` }}>
+                <div style={{ fontFamily:M, fontSize:30, fontWeight:700, color:s.c }}>{s.v}</div>
+                <div style={{ fontSize:12, color:mut, marginTop:4 }}>{s.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {showForm ? (
+            <div style={{ marginBottom:24 }}>
+              <AddTopicForm defaultMemberId={me.id} onAdd={addTopic} onCancel={() => setShowForm(false)} />
+            </div>
+          ) : (
+            <button onClick={() => setShowForm(true)} style={{ width:'100%', padding:14, marginBottom:24, borderRadius:10, border:`1px dashed ${acc}88`, background:'transparent', color:acc, fontFamily:M, fontSize:12, cursor:'pointer', letterSpacing:2 }}>
+              + ADD TOPIC FOR NEXT 1:1
+            </button>
+          )}
+
+          {myOpen.length>0 && (
+            <div style={{ marginBottom:28 }}>
+              <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Open · {myOpen.length}</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {myOpen.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={false} />)}
+              </div>
+            </div>
+          )}
+
+          {myDone.length>0 && (
+            <div>
+              <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Discussed · {myDone.length}</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {myDone.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={false} />)}
+              </div>
+            </div>
+          )}
+
+          {myOpen.length===0 && myDone.length===0 && !showForm && (
+            <div style={{ textAlign:'center', padding:'64px 0', color:mut }}>
+              <div style={{ fontSize:38, marginBottom:14 }}>📋</div>
+              <div style={{ fontFamily:M, fontSize:13, letterSpacing:1 }}>No topics yet</div>
+              <div style={{ fontSize:13, marginTop:8 }}>Add what you'd like to cover in your next 1:1</div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     MANAGER DASHBOARD
+  ══════════════════════════════════════════════════════════════════════════ */
+  if (page==='manager') {
+    const focusedMbr = focusMbr ? members.find(m => m.id===focusMbr) : null;
+    const allOpen = topics.filter(t => t.status==='open').length;
+    const allDone = topics.filter(t => t.status==='discussed').length;
+
+    return (
+      <div style={{ minHeight:'100vh', background:bg, color:txt, fontFamily:F }}>
+        {/* Header */}
+        <div style={{ background:s1, borderBottom:`1px solid ${bdr}`, padding:'12px 24px', display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, zIndex:10 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+            <span style={{ fontFamily:M, fontSize:14, fontWeight:700, color:acc, letterSpacing:2 }}>1:1 HUB</span>
+            <div style={{ display:'flex', gap:4 }}>
+              {[['overview','Overview'],['team','Team'],['settings','Settings']].map(([id,label]) => (
+                <button key={id} onClick={() => { setTab(id); setFocusMbr(null); setShowForm(false); }}
+                  style={{ padding:'7px 14px', borderRadius:6, border:'none', background:tab===id?acc:'none', color:tab===id?'#000':mut, fontFamily:M, fontSize:11, letterSpacing:1, textTransform:'uppercase', cursor:'pointer' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button onClick={logout} style={ghost}>LOGOUT</button>
+        </div>
+
+        <div style={{ maxWidth:940, margin:'0 auto', padding:24 }}>
+
+          {/* ══ OVERVIEW ══ */}
+          {tab==='overview' && (
+            <div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:28 }}>
+                {[{l:'Open Topics',v:allOpen,c:acc},{l:'Discussed',v:allDone,c:okC},{l:'Active Members',v:active.length,c:'#60a5fa'}].map(s => (
+                  <div key={s.l} style={{ background:s2, borderRadius:10, padding:'18px 20px', border:`1px solid ${bdr}` }}>
+                    <div style={{ fontFamily:M, fontSize:32, fontWeight:700, color:s.c }}>{s.v}</div>
+                    <div style={{ fontSize:13, color:mut, marginTop:4 }}>{s.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
+                <select value={filterMbr} onChange={e => setFilterMbr(e.target.value)} style={{ ...inp, width:'auto', minWidth:170 }}>
+                  <option value="all">All Members</option>
+                  {active.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:mut, cursor:'pointer', userSelect:'none' }}>
+                  <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} style={{ accentColor:acc, width:15, height:15 }} />
+                  Show discussed
+                </label>
+                <button onClick={() => { setShowForm(true); setFormMbrId(filterMbr==='all'?null:filterMbr); }}
+                  style={{ ...mkBtn(), marginLeft:'auto', padding:'8px 20px' }}>+ ADD TOPIC</button>
+              </div>
+
+              {showForm && (
+                <div style={{ marginBottom:24 }}>
+                  <AddTopicForm defaultMemberId={formMbrId} membersList={formMbrId?null:active} onAdd={addTopic} onCancel={() => { setShowForm(false); setFormMbrId(null); }} />
+                </div>
+              )}
+
+              {active.filter(m => filterMbr==='all'||m.id===filterMbr).map(m => {
+                const open = openTopics(m.id);
+                const done = doneTopics(m.id);
+                const shown = showDone ? [...open,...done] : open;
+                return (
+                  <div key={m.id} style={{ marginBottom:28 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+                      <Avatar name={m.name} size={36} />
+                      <div>
+                        <div style={{ fontWeight:600 }}>{m.name}</div>
+                        <div style={{ fontSize:12, color:mut }}>
+                          {open.length>0 ? <span style={{ color:acc }}>● {open.length} open</span> : <span>No open topics</span>}
+                          {done.length>0 && <span> · {done.length} discussed</span>}
+                        </div>
+                      </div>
+                      <button onClick={() => { setTab('team'); setFocusMbr(m.id); }} style={{ ...ghost, marginLeft:'auto', fontSize:11 }}>VIEW →</button>
+                    </div>
+                    {shown.length===0
+                      ? <div style={{ padding:'12px 16px', background:s2, borderRadius:8, border:`1px solid ${bdr}`, color:mut, fontSize:13 }}>No open topics</div>
+                      : <div style={{ display:'flex', flexDirection:'column', gap:8 }}>{shown.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={true} />)}</div>
+                    }
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ══ TEAM GRID ══ */}
+          {tab==='team' && !focusedMbr && (
+            <div>
+              <div style={{ fontFamily:M, fontSize:11, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:20 }}>Active Members</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(192px,1fr))', gap:14 }}>
+                {active.map(m => {
+                  const oc = openTopics(m.id).length;
+                  return (
+                    <button key={m.id} onClick={() => setFocusMbr(m.id)} style={{ background:s2, borderRadius:10, border:`1px solid ${bdr}`, padding:20, textAlign:'left', cursor:'pointer', transition:'all .15s' }}
+                      onMouseOver={e => { e.currentTarget.style.borderColor=acc+'66'; e.currentTarget.style.background=s3; }}
+                      onMouseOut={e =>  { e.currentTarget.style.borderColor=bdr;      e.currentTarget.style.background=s2; }}>
+                      <Avatar name={m.name} size={44} />
+                      <div style={{ fontWeight:600, fontSize:15, color:txt, marginTop:12 }}>{m.name}</div>
+                      <div style={{ fontSize:12, marginTop:5, color:oc>0?acc:mut }}>{oc>0?`● ${oc} open topic${oc!==1?'s':''}` : 'No open topics'}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ══ MEMBER DETAIL ══ */}
+          {tab==='team' && focusedMbr && (
+            <div>
+              <button onClick={() => { setFocusMbr(null); setShowForm(false); setFormMbrId(null); }} style={{ ...ghost, marginBottom:24 }}>← Team</button>
+              <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:28 }}>
+                <Avatar name={focusedMbr.name} size={54} />
+                <div>
+                  <div style={{ fontSize:22, fontWeight:600 }}>{focusedMbr.name}</div>
+                  <div style={{ fontSize:13, color:mut, marginTop:3 }}>{openTopics(focusedMbr.id).length} open · {doneTopics(focusedMbr.id).length} discussed</div>
+                </div>
+                <button onClick={() => { setShowForm(true); setFormMbrId(focusedMbr.id); }} style={{ ...mkBtn(), marginLeft:'auto' }}>+ ADD TOPIC</button>
+              </div>
+
+              {showForm && formMbrId===focusedMbr.id && (
+                <div style={{ marginBottom:24 }}>
+                  <AddTopicForm defaultMemberId={focusedMbr.id} onAdd={addTopic} onCancel={() => { setShowForm(false); setFormMbrId(null); }} />
+                </div>
+              )}
+
+              {openTopics(focusedMbr.id).length>0 && (
+                <div style={{ marginBottom:24 }}>
+                  <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Open · {openTopics(focusedMbr.id).length}</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                    {openTopics(focusedMbr.id).map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={true} />)}
+                  </div>
+                </div>
+              )}
+
+              {doneTopics(focusedMbr.id).length>0 && (
+                <div>
+                  <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Discussed · {doneTopics(focusedMbr.id).length}</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                    {doneTopics(focusedMbr.id).map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={true} />)}
+                  </div>
+                </div>
+              )}
+
+              {mbrTopics(focusedMbr.id).length===0 && !showForm && (
+                <div style={{ textAlign:'center', padding:'64px 0', color:mut }}>
+                  <div style={{ fontSize:38, marginBottom:14 }}>📋</div>
+                  <div style={{ fontFamily:M, fontSize:13, letterSpacing:1 }}>No topics for {focusedMbr.name} yet</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══ SETTINGS ══ */}
+          {tab==='settings' && (
+            <div style={{ display:'flex', flexDirection:'column', gap:24, maxWidth:620 }}>
+
+              <div style={{ background:s2, borderRadius:12, border:`1px solid ${bdr}`, padding:24 }}>
+                <div style={{ fontFamily:M, fontSize:11, color:acc, letterSpacing:2, textTransform:'uppercase', marginBottom:16 }}>Change Manager PIN</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
+                  <input type="password" value={np1} onChange={e => setNp1(e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="New PIN" maxLength={4} style={{ ...inp, fontFamily:M, fontSize:20, letterSpacing:10, textAlign:'center' }} />
+                  <input type="password" value={np2} onChange={e => setNp2(e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="Confirm" maxLength={4} style={{ ...inp, fontFamily:M, fontSize:20, letterSpacing:10, textAlign:'center' }} />
+                </div>
+                <button onClick={changePin} style={mkBtn(np1.length===4 && np1===np2)}>UPDATE PIN</button>
+                {pinMsg && <div style={{ marginTop:10, fontSize:13, fontFamily:M, color:pinMsg.startsWith('✓')?okC:errC }}>{pinMsg}</div>}
+              </div>
+
+              <div style={{ background:s2, borderRadius:12, border:`1px solid ${bdr}`, padding:24 }}>
+                <div style={{ fontFamily:M, fontSize:11, color:acc, letterSpacing:2, textTransform:'uppercase', marginBottom:16 }}>Add Team Member</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr auto', gap:12, marginBottom:12, alignItems:'end' }}>
+                  <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Full name" style={inp} />
+                  <input value={addPc} onChange={e => setAddPc(e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="4-digit passcode" maxLength={4} style={{ ...inp, width:150, fontFamily:M, letterSpacing:4, textAlign:'center' }} />
+                </div>
+                <button onClick={addMember} style={mkBtn(!!addName.trim() && addPc.length===4)}>ADD MEMBER</button>
+              </div>
+
+              <div style={{ background:s2, borderRadius:12, border:`1px solid ${bdr}`, padding:24 }}>
+                <div style={{ fontFamily:M, fontSize:11, color:acc, letterSpacing:2, textTransform:'uppercase', marginBottom:4 }}>Team Passcodes</div>
+                <div style={{ fontSize:12, color:mut, marginBottom:16 }}>Share each passcode with the corresponding team member. Edit name or passcode at any time.</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {members.map(m => (
+                    <div key={m.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:8, background:s1, border:`1px solid ${m.active?bdr:bdr+'44'}`, opacity:m.active?1:0.45 }}>
+                      {!m.active && <span style={{ fontSize:10, fontFamily:M, color:mut, padding:'2px 6px', border:`1px solid ${mut}44`, borderRadius:4, flexShrink:0 }}>ARCHIVED</span>}
+                      {editId===m.id ? (
+                        <div style={{ display:'flex', gap:8, flex:1 }}>
+                          <input value={editName} onChange={e => setEditName(e.target.value)} style={{ ...inp, flex:1 }} autoFocus />
+                          <input value={editPc} onChange={e => setEditPc(e.target.value.replace(/\D/g,'').slice(0,4))} placeholder={m.pc} maxLength={4} style={{ ...inp, width:90, fontFamily:M, letterSpacing:4, textAlign:'center' }} />
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ flex:1, fontSize:14, fontWeight:500, color:m.active?txt:mut }}>{m.name}</div>
+                          <div style={{ fontFamily:M, fontSize:14, color:acc, letterSpacing:4 }}>{m.pc}</div>
+                        </>
+                      )}
+                      <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                        {editId===m.id ? (
+                          <>
+                            <button onClick={saveEdit} style={{ ...ghost, color:okC, borderColor:okC+'55', fontSize:11 }}>SAVE</button>
+                            <button onClick={() => { setEditId(null); setEditName(''); setEditPc(''); }} style={{ ...ghost, fontSize:11 }}>CANCEL</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => { setEditId(m.id); setEditName(m.name); setEditPc(''); }} style={{ ...ghost, fontSize:11 }}>EDIT</button>
+                            {m.active
+                              ? <button onClick={() => archiveMember(m.id)} style={{ ...ghost, color:errC, borderColor:errC+'44', fontSize:11 }}>ARCHIVE</button>
+                              : <button onClick={() => restoreMember(m.id)} style={{ ...ghost, color:okC,  borderColor:okC +'44', fontSize:11 }}>RESTORE</button>
+                            }
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

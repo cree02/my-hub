@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chris's Hub</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#090e1a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Chris's Hub" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #090e1a;
+      color: #e2e8f0;
+      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+    }
+
+    header {
+      padding: 2.5rem 1.5rem 1rem;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .greeting {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #475569;
+      margin-bottom: 0.3rem;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #f8fafc;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      margin-top: 0.4rem;
+      color: #475569;
+      font-size: 0.9rem;
+    }
+
+    main {
+      padding: 1.5rem;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #334155;
+      margin-bottom: 0.85rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .card {
+      background: #0f1927;
+      border: 1px solid #1e2d45;
+      border-radius: 16px;
+      padding: 1.5rem;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      transition: background 0.15s, border-color 0.15s, transform 0.12s;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      background: #131f32;
+      border-color: #2d4a6e;
+      transform: translateY(-2px);
+    }
+
+    .card:active {
+      transform: translateY(0);
+    }
+
+    .card.coming-soon {
+      opacity: 0.55;
+      cursor: default;
+    }
+
+    .card.coming-soon:hover {
+      transform: none;
+      background: #0f1927;
+      border-color: #1e2d45;
+    }
+
+    .card-icon {
+      font-size: 1.75rem;
+      flex-shrink: 0;
+      width: 48px;
+      height: 48px;
+      background: #0d1b2e;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card-body { flex: 1; min-width: 0; }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-desc {
+      font-size: 0.82rem;
+      color: #475569;
+      line-height: 1.5;
+    }
+
+    .badge {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.85rem;
+      background: #1e2d45;
+      color: #60a5fa;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+    }
+
+    .arrow {
+      position: absolute;
+      bottom: 1rem;
+      right: 1rem;
+      color: #1e3a5f;
+      font-size: 1rem;
+      transition: color 0.15s;
+    }
+    .card:hover .arrow { color: #3b82f6; }
+
+    footer {
+      text-align: center;
+      padding: 2rem 1rem 3rem;
+      color: #1e2d45;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+    }
+
+    @media (max-width: 420px) {
+      header h1 { font-size: 1.6rem; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="greeting">Welcome back</div>
+  <h1>Chris's Hub</h1>
+  <p>Your tools, all in one place.</p>
+</header>
+
+<main>
+  <div class="section-label">Dashboards</div>
+  <div class="grid">
+
+    <a class="card" href="dashboards/ledger.html">
+      <div class="card-icon">💳</div>
+      <div class="card-body">
+        <div class="card-title">Chris &amp; James Ledger</div>
+        <div class="card-desc">Shared expense tracker with categories and balance summary.</div>
+      </div>
+      <span class="arrow">›</span>
+    </a>
+
+    <a class="card" href="dashboards/one-on-one-hub.html">
+      <div class="card-icon">🤝</div>
+      <div class="card-body">
+        <div class="card-title">1:1 Hub</div>
+        <div class="card-desc">Prep, track, and follow up on one-on-one meetings.</div>
+      </div>
+      <span class="arrow">›</span>
+    </a>
+
+    <a class="card coming-soon" href="dashboards/first-101.html">
+      <div class="card-icon">📋</div>
+      <div class="card-body">
+        <div class="card-title">First 101 Guide</div>
+        <div class="card-desc">Onboarding guide — in progress.</div>
+      </div>
+      <span class="badge">Soon</span>
+    </a>
+
+  </div>
+</main>
+
+<footer>cree02 · Chris's Hub</footer>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+</script>
+</body>
+</html>

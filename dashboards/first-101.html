@@ -3,61 +3,432 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>First 101 Guide</title>
+  <title>First 1:1 Guide</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #090e1a;
-      color: #e2e8f0;
-      font-family: 'DM Sans', system-ui, sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
-    }
-    .card {
-      background: #0f1927;
-      border: 1px solid #1e2d45;
-      border-radius: 16px;
-      padding: 3rem 2.5rem;
-      max-width: 500px;
-      width: 100%;
-      text-align: center;
-    }
-    .icon { font-size: 3rem; margin-bottom: 1.25rem; }
-    h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.75rem; color: #f8fafc; }
-    p { color: #64748b; font-size: 1rem; line-height: 1.6; margin-bottom: 1.5rem; }
-    .badge {
-      display: inline-block;
-      background: #1e2d45;
-      color: #60a5fa;
-      font-size: 0.75rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      padding: 0.35rem 0.85rem;
-      border-radius: 999px;
-    }
-    a {
-      display: inline-block;
-      margin-top: 2rem;
-      color: #60a5fa;
+    body { background: #F7F5F0; }
+    #hub-back {
+      position: fixed;
+      top: 10px;
+      right: 12px;
+      z-index: 999;
+      background: rgba(27,67,50,0.85);
+      color: #B7E4C7;
+      font-size: 12px;
+      font-family: system-ui, sans-serif;
+      padding: 5px 11px;
+      border-radius: 20px;
       text-decoration: none;
-      font-size: 0.9rem;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.12);
     }
-    a:hover { text-decoration: underline; }
+    #hub-back:hover { background: rgba(27,67,50,1); }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="icon">📋</div>
-    <h1>First 101 Guide</h1>
-    <p>This dashboard is currently being built. Check back soon — it will live right here when it's ready.</p>
-    <span class="badge">Coming Soon</span>
-    <br />
-    <a href="../index.html">← Back to Hub</a>
-  </div>
+<a id="hub-back" href="../index.html">← Hub</a>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const sections = [
+  {
+    id: "opening", label: "Opening", icon: "👋", color: "#2D6A4F",
+    framing: "Set the tone before jumping in. This shouldn't feel like an interview.",
+    script: `"I wanted to carve out some time just to get to know you — no agenda, no performance stuff. I'm genuinely curious about who you are and how you work. You can take this wherever you want."`,
+    questions: [],
+    tip: "If they seem guarded or unsure, normalize it: 'I know transitions like this can feel uncertain — I'd rather just talk through things than have you wonder what I'm thinking.'"
+  },
+  {
+    id: "story", label: "Their Story", icon: "🗺️", color: "#1B4332",
+    framing: "Understand how they got here and what they bring that isn't obvious.",
+    questions: [
+      { q: "Walk me through how you ended up in this role — what's the path that got you here?", note: "Good opener. Let it run." },
+      { q: "What's something about your background that doesn't show up on a résumé?", note: "Often reveals what they're proud of or what matters to them." },
+      { q: "What drew you to this kind of work in the first place?", note: "Skip if it came up naturally above." },
+    ],
+    tip: "For people you already know well, reframe this: 'I feel like I know your resume — tell me something I probably don't know.'"
+  },
+  {
+    id: "energy", label: "What Makes Work Good", icon: "⚡", color: "#40916C",
+    framing: "Find out what energizes them and what drains them. This shapes how you assign work.",
+    questions: [
+      { q: "What kind of work do you find yourself getting lost in — the stuff where time disappears?", note: "Reveals intrinsic motivators." },
+      { q: "What's been the most satisfying project or win you can remember?", note: "What does 'success' feel like to them?" },
+      { q: "What's the flip side — what kind of work drains you or feels like a grind?", note: "Just as valuable. Don't skip this one." },
+    ],
+    tip: "These answers tell you more than any skills matrix. A person who lights up talking about customer problem-solving vs. one who loves data clean-up — both are useful, just differently."
+  },
+  {
+    id: "howtheywork", label: "How They Operate", icon: "⚙️", color: "#52B788",
+    framing: "Learn their working style, communication preferences, and what 'good management' looks like to them.",
+    questions: [
+      { q: "How do you like to receive feedback — in the moment, or would you rather have time to think first?", note: "Critical. Gets you off on the right foot." },
+      { q: "Do you tend to work things out on your own first, or do you prefer to think out loud with someone?", note: "Tells you how much check-in they want vs. need space." },
+      { q: "What does a manager do that actually makes a difference for you — good or bad?", note: "Might need a gentle push: 'Think about the best boss you had — what did they do?'" },
+    ],
+    tip: "If they say 'I'm pretty low maintenance' — follow up: 'Even low-maintenance people have things that matter to them. What would make you feel set up to succeed here?'"
+  },
+  {
+    id: "future", label: "Where They're Headed", icon: "🧭", color: "#74C69D",
+    framing: "Understand their ambitions — short and long. You don't need a 5-year plan, just enough to know what direction to point them.",
+    questions: [
+      { q: "Where do you see yourself going from here — even just in the next year or two?", note: "Keep it low-pressure. Some people haven't thought about it." },
+      { q: "Is there anything you want to learn or get better at — technical, soft skills, whatever?", note: "Opens the door to development conversations down the road." },
+      { q: "Is there anything you feel underutilized on — things you're capable of that haven't had much outlet?", note: "Gold. Surfaces hidden capability and quiet frustration at the same time." },
+      { q: "What 3rd party products are most interesting to you?", note: "Reveals where their technical curiosity lives and what they'd want to go deeper on." },
+    ],
+    tip: "For someone earlier in their career, make it concrete: 'Is there a role or type of work you've seen and thought — that looks interesting?'"
+  },
+  {
+    id: "close", label: "Close & Handoff", icon: "🤝", color: "#95D5B2",
+    framing: "End with clarity about what working together will look like — and leave the door open.",
+    questions: [
+      { q: "Is there anything about this transition you're still wondering about or want to talk through?", note: "The reorg is recent. Some people will have things on their mind." },
+      { q: "Is there anything I should know about you right now that would help me be a better manager for you?", note: "Intentionally open-ended. Sometimes you get nothing, sometimes you get everything." },
+    ],
+    script: `Tell them how you want to run 1:1s going forward — cadence, format, who drives the agenda. Something like: "I want these to be useful to you, not just a status update. I'll bring things I need from you, but I want you to bring what you need too."`,
+    tip: "Close by telling them one thing about how you operate — so they're not wondering. Keep it honest and brief."
+  }
+];
+
+const PKEY = "101g_v3";
+function pk(name, suffix) {
+  return `${PKEY}_${name.trim().replace(/\s+/g, "-")}_${suffix}`;
+}
+
+// localStorage-backed storage (works in any browser, persists across sessions)
+function storageGet(key) {
+  try { return Promise.resolve(localStorage.getItem(key)); } catch { return Promise.resolve(null); }
+}
+function storageSet(key, value) {
+  try { localStorage.setItem(key, value); return Promise.resolve(true); } catch { return Promise.resolve(false); }
+}
+function storageList(prefix) {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) keys.push(k);
+    }
+    return Promise.resolve(keys);
+  } catch { return Promise.resolve([]); }
+}
+
+function Guide() {
+  const [active, setActive] = useState(0);
+  const [checked, setChecked] = useState({});
+  const [expandedNotes, setExpandedNotes] = useState({});
+  const [questionNotes, setQuestionNotes] = useState({});
+  const [pageNotes, setPageNotes] = useState({});
+  const [personName, setPersonName] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [savedPeople, setSavedPeople] = useState([]);
+  const [saveStatus, setSaveStatus] = useState(null);
+  const [showPersonMenu, setShowPersonMenu] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [copyLabel, setCopyLabel] = useState("Copy All");
+  const saveTimer = useRef(null);
+  const nameInputRef = useRef(null);
+
+  useEffect(() => {
+    storageList(PKEY).then(keys => {
+      const names = new Set();
+      keys.forEach(k => {
+        const stripped = k.replace(`${PKEY}_`, "");
+        const lastUnderscore = stripped.lastIndexOf("_");
+        if (lastUnderscore > 0) {
+          names.add(stripped.slice(0, lastUnderscore).replace(/-/g, " "));
+        }
+      });
+      setSavedPeople([...names].filter(Boolean));
+    });
+  }, []);
+
+  const loadPersonData = useCallback(async (name) => {
+    if (!name.trim()) return;
+    const [qn, pn, ch] = await Promise.all([
+      storageGet(pk(name, "qnotes")),
+      storageGet(pk(name, "pnotes")),
+      storageGet(pk(name, "checked")),
+    ]);
+    if (qn) { try { setQuestionNotes(JSON.parse(qn)); } catch {} }
+    if (pn) { try { setPageNotes(JSON.parse(pn)); } catch {} }
+    if (ch) { try { setChecked(JSON.parse(ch)); } catch {} }
+  }, []);
+
+  const triggerSave = useCallback((qn, pn, ch, name) => {
+    const n = name || personName;
+    if (!n.trim()) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSaveStatus("saving");
+    saveTimer.current = setTimeout(async () => {
+      const results = await Promise.all([
+        storageSet(pk(n, "qnotes"), JSON.stringify(qn)),
+        storageSet(pk(n, "pnotes"), JSON.stringify(pn)),
+        storageSet(pk(n, "checked"), JSON.stringify(ch)),
+      ]);
+      if (results.every(Boolean)) {
+        setSaveStatus("saved");
+        setSavedPeople(prev => prev.includes(n) ? prev : [...prev, n]);
+        setTimeout(() => setSaveStatus(null), 2000);
+      } else {
+        setSaveStatus("error");
+      }
+    }, 700);
+  }, [personName]);
+
+  const handleNameCommit = (name) => {
+    setEditingName(false);
+    if (name.trim()) {
+      setChecked({});
+      setQuestionNotes({});
+      setPageNotes({});
+      loadPersonData(name);
+    }
+  };
+
+  const toggleCheck = (sId, idx) => {
+    const key = `${sId}-${idx}`;
+    const updated = { ...checked, [key]: !checked[key] };
+    setChecked(updated);
+    triggerSave(questionNotes, pageNotes, updated, personName);
+  };
+
+  const updateQNote = (sId, idx, val) => {
+    const key = `${sId}-${idx}`;
+    const updated = { ...questionNotes, [key]: val };
+    setQuestionNotes(updated);
+    triggerSave(updated, pageNotes, checked, personName);
+  };
+
+  const updatePageNote = (sId, val) => {
+    const updated = { ...pageNotes, [sId]: val };
+    setPageNotes(updated);
+    triggerSave(questionNotes, updated, checked, personName);
+  };
+
+  const section = sections[active];
+
+  const buildExportText = () => {
+    const name = personName.trim() || "Unknown";
+    const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    let doc = `FIRST 1:1 NOTES — ${name}\n${date}\n${"═".repeat(44)}\n`;
+    sections.forEach(s => {
+      doc += `\n${s.icon}  ${s.label.toUpperCase()}\n${"─".repeat(36)}\n`;
+      doc += `${s.framing}\n\n`;
+      s.questions.forEach((item, i) => {
+        const done = checked[`${s.id}-${i}`] ? "✓" : "○";
+        doc += `  ${done}  ${item.q}\n`;
+        const qn = questionNotes[`${s.id}-${i}`];
+        if (qn?.trim()) doc += `     → ${qn.trim().replace(/\n/g, "\n       ")}\n`;
+        doc += "\n";
+      });
+      const pn = pageNotes[s.id];
+      if (pn?.trim()) doc += `NOTES:\n${pn.trim()}\n\n`;
+    });
+    return doc;
+  };
+
+  const handleCopy = () => {
+    const text = buildExportText();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyLabel("Copied ✓");
+      setTimeout(() => setCopyLabel("Copy All"), 2000);
+    }).catch(() => setCopyLabel("Select & copy manually"));
+  };
+
+  const hasNotes = Object.values(questionNotes).some(v => v?.trim()) || Object.values(pageNotes).some(v => v?.trim());
+  const sectionHasNotes = (s) =>
+    pageNotes[s.id]?.trim() || s.questions.some((_, qi) => questionNotes[`${s.id}-${qi}`]?.trim());
+
+  const statusText = () => {
+    if (saveStatus === "saving") return "Saving...";
+    if (saveStatus === "saved") return "✓ Saved";
+    if (saveStatus === "error") return "⚠ Save failed";
+    if (!personName.trim()) return "Add a name to save notes";
+    return "Auto-saves as you type";
+  };
+
+  return (
+    <div style={{ fontFamily: "'Georgia','Times New Roman',serif", background: "#F7F5F0", minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative" }}>
+
+      {/* Export overlay */}
+      {showExport && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 10, width: "100%", maxWidth: 560, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}>
+            <div style={{ background: "#1B4332", color: "#D8F3DC", padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: "system-ui,sans-serif", opacity: 0.65, textTransform: "uppercase", letterSpacing: "0.1em" }}>Export Notes</div>
+                <div style={{ fontSize: 16 }}>{personName || "Unnamed"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={handleCopy} style={{ background: "#2D6A4F", border: "none", borderRadius: 6, color: "#D8F3DC", padding: "6px 14px", fontSize: 13, cursor: "pointer", fontFamily: "system-ui,sans-serif" }}>
+                  {copyLabel}
+                </button>
+                <button onClick={() => setShowExport(false)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "#D8F3DC", padding: "6px 10px", fontSize: 16, cursor: "pointer" }}>✕</button>
+              </div>
+            </div>
+            <pre style={{ flex: 1, overflow: "auto", padding: "16px 18px", margin: 0, fontSize: 12.5, fontFamily: "system-ui,sans-serif", lineHeight: 1.65, color: "#2a2a2a", whiteSpace: "pre-wrap", wordBreak: "break-word", userSelect: "all" }}>
+              {buildExportText()}
+            </pre>
+            <div style={{ padding: "10px 18px", borderTop: "1px solid #eee", fontSize: 12, color: "#888", fontFamily: "system-ui,sans-serif" }}>
+              Hit "Copy All" then paste into any doc, email, or notes app.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ background: "#1B4332", color: "#D8F3DC", padding: "15px 18px 13px" }}>
+        <div style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", opacity: 0.6, marginBottom: 3, fontFamily: "system-ui,sans-serif" }}>First 1:1 Guide</div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          {editingName ? (
+            <input
+              ref={nameInputRef}
+              autoFocus
+              value={personName}
+              onChange={e => setPersonName(e.target.value)}
+              onBlur={() => handleNameCommit(personName)}
+              onKeyDown={e => { if (e.key === "Enter") handleNameCommit(personName); }}
+              placeholder="Enter name..."
+              style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: 6, padding: "5px 10px", color: "#fff", fontSize: 18, fontFamily: "'Georgia',serif", outline: "none", width: 220 }}
+            />
+          ) : (
+            <div onClick={() => setEditingName(true)} style={{ fontSize: 20, cursor: "pointer", borderBottom: "1px dashed rgba(255,255,255,0.3)", paddingBottom: 1, color: personName ? "#fff" : "rgba(255,255,255,0.4)", minWidth: 140 }}>
+              {personName || "Tap to add name ✎"}
+            </div>
+          )}
+
+          {savedPeople.length > 0 && (
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setShowPersonMenu(!showPersonMenu)} style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 5, color: "#B7E4C7", fontSize: 11, padding: "4px 8px", cursor: "pointer", fontFamily: "system-ui,sans-serif" }}>
+                Saved ▾
+              </button>
+              {showPersonMenu && (
+                <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, background: "#fff", border: "1px solid #ddd", borderRadius: 7, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", zIndex: 100, minWidth: 160, overflow: "hidden" }}>
+                  {savedPeople.map(p => (
+                    <div key={p} onClick={() => { setPersonName(p); setChecked({}); setQuestionNotes({}); setPageNotes({}); loadPersonData(p); setShowPersonMenu(false); }}
+                      style={{ padding: "9px 14px", fontSize: 13, color: "#1B4332", cursor: "pointer", fontFamily: "system-ui,sans-serif", borderBottom: "1px solid #f0f0f0", background: p === personName ? "#F0F7F2" : "#fff" }}>
+                      {p}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {personName && hasNotes && (
+            <button onClick={() => setShowExport(true)} style={{ marginLeft: "auto", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 5, color: "#D8F3DC", fontSize: 11, padding: "4px 10px", cursor: "pointer", fontFamily: "system-ui,sans-serif" }}>
+              Export ↗
+            </button>
+          )}
+        </div>
+
+        <div style={{ fontSize: 11, fontFamily: "system-ui,sans-serif", opacity: saveStatus === "error" ? 1 : 0.6, color: saveStatus === "error" ? "#FFA07A" : undefined }}>
+          {statusText()}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", overflowX: "auto", background: "#2D6A4F", borderBottom: "2px solid #1B4332", scrollbarWidth: "none" }}>
+        {sections.map((s, i) => (
+          <button key={s.id} onClick={() => setActive(i)} style={{ flex: "0 0 auto", padding: "10px 13px", background: active === i ? "#F7F5F0" : "transparent", color: active === i ? "#1B4332" : "#B7E4C7", border: "none", cursor: "pointer", fontSize: 12, fontFamily: "system-ui,sans-serif", fontWeight: active === i ? "600" : "400", borderRight: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap" }}>
+            {s.icon} {s.label}
+            {sectionHasNotes(s) && <span style={{ display: "inline-block", width: 5, height: 5, background: "#74C69D", borderRadius: "50%", marginLeft: 5, verticalAlign: "middle" }} />}
+          </button>
+        ))}
+      </div>
+
+      {/* Main content */}
+      <div style={{ flex: 1, padding: "16px 16px 32px", maxWidth: 640, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
+
+        <div style={{ background: "#fff", borderLeft: `4px solid ${section.color}`, borderRadius: "0 8px 8px 0", padding: "12px 14px", marginBottom: 14, fontSize: 14, lineHeight: 1.6, color: "#2c2c2c" }}>
+          <div style={{ fontSize: 10, fontFamily: "system-ui,sans-serif", textTransform: "uppercase", letterSpacing: "0.12em", color: section.color, marginBottom: 4, fontWeight: 600 }}>Purpose</div>
+          {section.framing}
+        </div>
+
+        {section.script && (
+          <div style={{ background: "#FAFAF7", border: "1px dashed #C8D8C8", borderRadius: 8, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, lineHeight: 1.7, color: "#3a3a3a", fontStyle: "italic" }}>
+            <div style={{ fontSize: 10, fontFamily: "system-ui,sans-serif", textTransform: "uppercase", letterSpacing: "0.12em", color: "#74C69D", marginBottom: 6, fontWeight: 600, fontStyle: "normal" }}>How to frame it</div>
+            {section.script}
+          </div>
+        )}
+
+        {section.questions.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontFamily: "system-ui,sans-serif", textTransform: "uppercase", letterSpacing: "0.12em", color: "#666", marginBottom: 9, fontWeight: 600 }}>Questions to draw from</div>
+            {section.questions.map((item, i) => {
+              const qKey = `${section.id}-${i}`;
+              const noteOpen = expandedNotes[qKey];
+              const qNote = questionNotes[qKey] || "";
+              const done = checked[qKey];
+              return (
+                <div key={i} style={{ background: done ? "#F0F7F2" : "#fff", border: `1px solid ${done ? "#95D5B2" : "#E0E0DC"}`, borderRadius: 8, marginBottom: 9, overflow: "hidden", opacity: done ? 0.75 : 1 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 13px 10px" }}>
+                    <div onClick={() => toggleCheck(section.id, i)} style={{ flexShrink: 0, width: 18, height: 18, borderRadius: "50%", border: `2px solid ${done ? section.color : "#ccc"}`, background: done ? section.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 2, cursor: "pointer" }}>
+                      {done && <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5.5L4 7.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, lineHeight: 1.55, color: "#1a1a1a", marginBottom: 3 }}>{item.q}</div>
+                      <div style={{ fontSize: 12, color: "#999", fontFamily: "system-ui,sans-serif", fontStyle: "italic" }}>{item.note}</div>
+                    </div>
+                    <button onClick={() => setExpandedNotes(prev => ({ ...prev, [qKey]: !prev[qKey] }))} style={{ flexShrink: 0, background: qNote ? "#E8F5EE" : "#f5f5f3", border: `1px solid ${qNote ? "#95D5B2" : "#ddd"}`, borderRadius: 5, padding: "3px 7px", cursor: "pointer", fontSize: 12, color: qNote ? section.color : "#999", fontFamily: "system-ui,sans-serif", marginTop: 1 }}>
+                      {qNote ? "📝" : "+"} Note
+                    </button>
+                  </div>
+                  {noteOpen && (
+                    <div style={{ borderTop: "1px solid #E8EDE8", padding: "9px 13px 11px", background: "#FAFCFA" }}>
+                      <textarea
+                        autoFocus
+                        value={qNote}
+                        onChange={e => updateQNote(section.id, i, e.target.value)}
+                        placeholder="Your notes for this question..."
+                        rows={3}
+                        style={{ width: "100%", border: "1px solid #C8D8C8", borderRadius: 6, padding: "7px 9px", fontSize: 13, fontFamily: "system-ui,sans-serif", color: "#2a2a2a", resize: "vertical", outline: "none", background: "#fff", boxSizing: "border-box", lineHeight: 1.5 }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {section.tip && (
+          <div style={{ background: "#FFFBF0", border: "1px solid #E8D89A", borderRadius: 8, padding: "11px 13px", fontSize: 13, lineHeight: 1.65, color: "#5a4a10", fontFamily: "system-ui,sans-serif", marginBottom: 14 }}>
+            <span style={{ fontWeight: 600, color: "#8a6a10" }}>💡 </span>{section.tip}
+          </div>
+        )}
+
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontFamily: "system-ui,sans-serif", textTransform: "uppercase", letterSpacing: "0.12em", color: "#666", marginBottom: 7, fontWeight: 600 }}>Section Notes</div>
+          <textarea
+            value={pageNotes[section.id] || ""}
+            onChange={e => updatePageNote(section.id, e.target.value)}
+            placeholder={`Additional notes for ${section.label}...`}
+            rows={4}
+            style={{ width: "100%", border: "1px solid #D0D8D0", borderRadius: 8, padding: "9px 11px", fontSize: 13.5, fontFamily: "system-ui,sans-serif", color: "#2a2a2a", resize: "vertical", outline: "none", background: "#fff", boxSizing: "border-box", lineHeight: 1.6 }}
+          />
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 18, paddingTop: 14, borderTop: "1px solid #E0E0DC" }}>
+          <button onClick={() => setActive(Math.max(0, active - 1))} disabled={active === 0} style={{ background: "none", border: "1px solid #ccc", borderRadius: 6, padding: "7px 14px", fontSize: 13, cursor: active === 0 ? "not-allowed" : "pointer", color: active === 0 ? "#bbb" : "#444", fontFamily: "system-ui,sans-serif" }}>← Back</button>
+          <div style={{ fontSize: 12, color: "#999", fontFamily: "system-ui,sans-serif" }}>{active + 1} / {sections.length}</div>
+          <button onClick={() => setActive(Math.min(sections.length - 1, active + 1))} disabled={active === sections.length - 1} style={{ background: active === sections.length - 1 ? "#eee" : "#2D6A4F", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 13, cursor: active === sections.length - 1 ? "not-allowed" : "pointer", color: active === sections.length - 1 ? "#bbb" : "#fff", fontFamily: "system-ui,sans-serif" }}>Next →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<Guide />);
+</script>
 </body>
 </html>

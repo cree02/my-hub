@@ -1,4 +1,4 @@
-const CACHE = 'hub-v1';
+const CACHE = 'hub-v2';
 const PRECACHE = [
   '/',
   '/index.html',

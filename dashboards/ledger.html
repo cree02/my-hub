@@ -7,7 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet"/>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, push, remove, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, push, remove, onValue, set, get, onChildAdded, onChildChanged, onChildRemoved } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey:            "AIzaSyD04tBNer0L6EWTCSXpYOCDOY086boiYdU",
@@ -127,13 +127,26 @@
       await processRecurring();
     }
 
-    onValue(txRef,snap=>{
-      allTransactions=[];
-      snap.forEach(child=>allTransactions.push({...child.val(),firebaseKey:child.key}));
-      allTransactions.sort((a,b)=>new Date(b.date)-new Date(a.date)||b.firebaseKey.localeCompare(a.firebaseKey));
-      render();
-      setStatus(true);
-    },()=>setStatus(false));
+    const sortTx=()=>allTransactions.sort((a,b)=>new Date(b.date)-new Date(a.date)||b.firebaseKey.localeCompare(a.firebaseKey));
+    function upsertTx(child){
+      const t={...child.val(),firebaseKey:child.key};
+      const i=allTransactions.findIndex(x=>x.firebaseKey===t.firebaseKey);
+      if(i>=0) allTransactions[i]=t; else allTransactions.push(t);
+      sortTx(); render(); setStatus(true);
+    }
+    function removeTx(child){
+      allTransactions=allTransactions.filter(x=>x.firebaseKey!==child.key);
+      render(); setStatus(true);
+    }
+    // Instant, reliable first load (one-time fetch always returns the full set)
+    get(txRef).then(snap=>{
+      snap.forEach(c=>{ if(!allTransactions.some(x=>x.firebaseKey===c.key)) allTransactions.push({...c.val(),firebaseKey:c.key}); });
+      sortTx(); render(); setStatus(true);
+    }).catch(()=>setStatus(false));
+    // Live per-transaction updates — incremental, so a slow sync can never wipe the list
+    onChildAdded(txRef, upsertTx);
+    onChildChanged(txRef, upsertTx);
+    onChildRemoved(txRef, removeTx);
 
     function setStatus(ok){ statusDot.style.background=ok?"#4ade80":"#f87171"; statusTxt.textContent=ok?"Live":"Offline"; }
 

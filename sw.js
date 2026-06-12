@@ -1,15 +1,19 @@
-const CACHE = 'hub-v3';
+const CACHE = 'hub-v4';
+// Relative to this service worker's location (/my-hub/), so it works on a GitHub project page
 const PRECACHE = [
-  '/',
-  '/index.html',
-  '/dashboards/ledger.html',
-  '/dashboards/one-on-one-hub.html',
-  '/dashboards/first-101.html'
+  './',
+  'index.html',
+  'dashboards/ledger.html',
+  'dashboards/one-on-one-hub.html',
+  'dashboards/first-101.html'
 ];
 
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      // add() each individually so one failure can't abort the whole install
+      .then(c => Promise.all(PRECACHE.map(u => c.add(u).catch(() => null))))
+      .then(() => self.skipWaiting())
   );
 });
 

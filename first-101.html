@@ -26,11 +26,20 @@
       border: 1px solid rgba(255,255,255,0.12);
     }
     #hub-back:hover { background: rgba(27,67,50,1); }
+
+    /* Print area is hidden on screen, shown only when printing / saving to PDF */
+    #print-area { display: none; }
+    @media print {
+      #root, #hub-back { display: none !important; }
+      #print-area { display: block !important; }
+      @page { margin: 16mm; }
+    }
   </style>
 </head>
 <body>
 <a id="hub-back" href="https://cree02.github.io/my-hub/">← Hub</a>
 <div id="root"></div>
+<div id="print-area"></div>
 
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
@@ -242,6 +251,48 @@ function Guide() {
     }).catch(() => setCopyLabel("Select & copy manually"));
   };
 
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const buildPrintHTML = () => {
+    const name = personName.trim() || "Unknown";
+    const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    let html = `<div style="font-family:Georgia,'Times New Roman',serif;color:#222;max-width:760px;margin:0 auto;line-height:1.6;">`;
+    html += `<div style="border-bottom:3px solid #1B4332;padding-bottom:12px;margin-bottom:8px;">`;
+    html += `<div style="font-size:12px;letter-spacing:0.15em;text-transform:uppercase;color:#2D6A4F;font-family:system-ui,sans-serif;">First 1:1 Notes</div>`;
+    html += `<div style="font-size:28px;font-weight:700;color:#1B4332;margin-top:4px;">${esc(name)}</div>`;
+    html += `<div style="font-size:13px;color:#777;font-family:system-ui,sans-serif;margin-top:2px;">${esc(date)}</div>`;
+    html += `</div>`;
+    sections.forEach(s => {
+      html += `<div style="margin-top:26px;page-break-inside:avoid;">`;
+      html += `<div style="font-size:18px;font-weight:700;color:#1B4332;">${s.icon} ${esc(s.label)}</div>`;
+      html += `<div style="font-size:13px;color:#666;font-style:italic;margin:3px 0 12px;">${esc(s.framing)}</div>`;
+      s.questions.forEach((item, i) => {
+        const done = checked[`${s.id}-${i}`];
+        const box = done ? "&#9745;" : "&#9744;"; // checked / empty checkbox
+        html += `<div style="margin-bottom:8px;">`;
+        html += `<div style="font-size:14px;color:#1a1a1a;"><span style="color:#2D6A4F;">${box}</span> ${esc(item.q)}</div>`;
+        const qn = questionNotes[`${s.id}-${i}`];
+        if (qn && qn.trim()) html += `<div style="font-size:13px;color:#333;margin:3px 0 0 22px;padding-left:10px;border-left:2px solid #95D5B2;white-space:pre-wrap;">${esc(qn.trim())}</div>`;
+        html += `</div>`;
+      });
+      const pn = pageNotes[s.id];
+      if (pn && pn.trim()) {
+        html += `<div style="margin-top:8px;background:#F7F5F0;border:1px solid #ddd;border-radius:6px;padding:10px 12px;">`;
+        html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#888;font-family:system-ui,sans-serif;margin-bottom:4px;">Section Notes</div>`;
+        html += `<div style="font-size:13.5px;color:#2a2a2a;white-space:pre-wrap;">${esc(pn.trim())}</div></div>`;
+      }
+      html += `</div>`;
+    });
+    html += `</div>`;
+    return html;
+  };
+
+  const handleSavePdf = () => {
+    document.getElementById("print-area").innerHTML = buildPrintHTML();
+    document.title = "First 1on1 Notes - " + (personName.trim() || "Unknown");
+    window.print();
+  };
+
   const hasNotes = Object.values(questionNotes).some(v => v?.trim()) || Object.values(pageNotes).some(v => v?.trim());
   const sectionHasNotes = (s) =>
     pageNotes[s.id]?.trim() || s.questions.some((_, qi) => questionNotes[`${s.id}-${qi}`]?.trim());
@@ -267,6 +318,9 @@ function Guide() {
                 <div style={{ fontSize: 16 }}>{personName || "Unnamed"}</div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={handleSavePdf} style={{ background: "#D8F3DC", border: "none", borderRadius: 6, color: "#1B4332", padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "system-ui,sans-serif" }}>
+                  Save as PDF
+                </button>
                 <button onClick={handleCopy} style={{ background: "#2D6A4F", border: "none", borderRadius: 6, color: "#D8F3DC", padding: "6px 14px", fontSize: 13, cursor: "pointer", fontFamily: "system-ui,sans-serif" }}>
                   {copyLabel}
                 </button>
@@ -277,7 +331,7 @@ function Guide() {
               {buildExportText()}
             </pre>
             <div style={{ padding: "10px 18px", borderTop: "1px solid #eee", fontSize: 12, color: "#888", fontFamily: "system-ui,sans-serif" }}>
-              Hit "Copy All" then paste into any doc, email, or notes app.
+              <strong>Save as PDF</strong> to keep a copy in a folder or OneNote · <strong>Copy All</strong> to paste into an email or doc. (In the print dialog, choose "Save as PDF" as the destination.)
             </div>
           </div>
         </div>
@@ -420,7 +474,11 @@ function Guide() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 18, paddingTop: 14, borderTop: "1px solid #E0E0DC" }}>
           <button onClick={() => setActive(Math.max(0, active - 1))} disabled={active === 0} style={{ background: "none", border: "1px solid #ccc", borderRadius: 6, padding: "7px 14px", fontSize: 13, cursor: active === 0 ? "not-allowed" : "pointer", color: active === 0 ? "#bbb" : "#444", fontFamily: "system-ui,sans-serif" }}>← Back</button>
           <div style={{ fontSize: 12, color: "#999", fontFamily: "system-ui,sans-serif" }}>{active + 1} / {sections.length}</div>
-          <button onClick={() => setActive(Math.min(sections.length - 1, active + 1))} disabled={active === sections.length - 1} style={{ background: active === sections.length - 1 ? "#eee" : "#2D6A4F", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 13, cursor: active === sections.length - 1 ? "not-allowed" : "pointer", color: active === sections.length - 1 ? "#bbb" : "#fff", fontFamily: "system-ui,sans-serif" }}>Next →</button>
+          {active === sections.length - 1 ? (
+            <button onClick={() => setShowExport(true)} style={{ background: "#1B4332", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#fff", fontFamily: "system-ui,sans-serif" }}>Finish &amp; Export ↗</button>
+          ) : (
+            <button onClick={() => setActive(Math.min(sections.length - 1, active + 1))} style={{ background: "#2D6A4F", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 13, cursor: "pointer", color: "#fff", fontFamily: "system-ui,sans-serif" }}>Next →</button>
+          )}
         </div>
       </div>
     </div>

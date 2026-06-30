@@ -111,9 +111,10 @@ const CATS = [
   { id: 'feedback', label: 'Feedback & Calibration',    color: '#fb923c', emoji: '💬' },
   { id: 'connect',  label: 'Human Connection',          color: '#c084fc', emoji: '🤝' },
   { id: 'air',      label: 'Clearing the Air',          color: '#facc15', emoji: '💨' },
+  { id: 'comp',     label: 'Competency',                color: '#f472b6', emoji: '🎯' },
   { id: 'other',    label: 'Other',                     color: '#94a3b8', emoji: '📌' },
 ];
-const getCat = id => CATS.find(c => c.id === id) ?? CATS[5];
+const getCat = id => CATS.find(c => c.id === id) ?? CATS.find(c => c.id === 'other');
 
 const SEEDS = {
   m1:  { id:'m1',  name:'Randy Mueller',  pc:'7821', active:true },
@@ -232,10 +233,38 @@ function Avatar({ name, size=40 }) {
   );
 }
 
-function TopicCard({ topic, onCheck, onDelete, isManager }) {
+function TopicCard({ topic, onCheck, onDelete, onEdit, isManager }) {
   const c = getCat(topic.category);
   const done = topic.status === 'discussed';
   const canDelete = isManager || topic.addedBy === 'employee';
+  // Anyone can edit/add notes to a task on their own list (employee view is already filtered to
+  // the logged-in member; manager sees everyone). Delete stays restricted via canDelete above.
+  const canEdit = true;
+  const [editing, setEditing] = useState(false);
+  const [eTitle, setETitle] = useState(topic.title);
+  const [eCat, setECat]     = useState(topic.category);
+  const [eNotes, setENotes] = useState(topic.notes || '');
+
+  const startEdit = () => { setETitle(topic.title); setECat(topic.category); setENotes(topic.notes || ''); setEditing(true); };
+  const saveEdit  = () => { if (!eTitle.trim()) return; onEdit(topic, { title:eTitle.trim(), category:eCat, notes:eNotes.trim() }); setEditing(false); };
+
+  if (editing) {
+    return (
+      <div style={{ borderRadius:8, border:`1px solid ${c.color}66`, background:s2, padding:'13px 16px', display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ fontSize:10, fontFamily:M, color:acc, letterSpacing:2, textTransform:'uppercase' }}>Edit Topic</div>
+        <input value={eTitle} onChange={e => setETitle(e.target.value)} placeholder="Topic title…" style={inp} autoFocus onKeyDown={e => e.key==='Enter' && saveEdit()} />
+        <select value={eCat} onChange={e => setECat(e.target.value)} style={inp}>
+          {CATS.map(x => <option key={x.id} value={x.id}>{x.emoji} {x.label}</option>)}
+        </select>
+        <textarea value={eNotes} onChange={e => setENotes(e.target.value)} placeholder="Notes…" style={{ ...inp, resize:'vertical', minHeight:70 }} />
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={saveEdit} style={{ ...mkBtn(!!eTitle.trim()), flex:1, height:38 }}>SAVE</button>
+          <button onClick={() => setEditing(false)} style={{ ...ghost, height:38, width:90 }}>CANCEL</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ borderRadius:8, border:`1px solid ${done?bdr:c.color+'44'}`, background:done?s1:s2, padding:'13px 16px', opacity:done?.5:1, transition:'all .2s' }}>
       <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
@@ -250,11 +279,14 @@ function TopicCard({ topic, onCheck, onDelete, isManager }) {
               <span style={{ fontSize:10, padding:'2px 8px', borderRadius:99, background:acc+'22', color:acc, fontFamily:M }}>from manager</span>
             )}
           </div>
-          {topic.notes && <div style={{ fontSize:12, color:mut, marginTop:5, lineHeight:1.55 }}>{topic.notes}</div>}
+          {topic.notes && <div style={{ fontSize:12, color:mut, marginTop:5, lineHeight:1.55, whiteSpace:'pre-wrap' }}>{topic.notes}</div>}
         </div>
         <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:5, flexShrink:0 }}>
           <span style={{ fontSize:11, color:mut, fontFamily:M }}>{fmt(topic.createdAt)}</span>
-          {canDelete && <button onClick={() => onDelete(topic)} style={{ background:'none', border:'none', color:mut, cursor:'pointer', fontSize:18, padding:0, lineHeight:1 }}>×</button>}
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            {canEdit && <button onClick={startEdit} title="Edit" style={{ background:'none', border:'none', color:mut, cursor:'pointer', fontSize:13, padding:0, lineHeight:1 }}>✎</button>}
+            {canDelete && <button onClick={() => onDelete(topic)} title="Delete" style={{ background:'none', border:'none', color:mut, cursor:'pointer', fontSize:18, padding:0, lineHeight:1 }}>×</button>}
+          </div>
         </div>
       </div>
     </div>
@@ -374,6 +406,10 @@ function App() {
 
   const toggleTopic = async t => {
     await saveTpc(topics.map(x => x.id!==t.id ? x : { ...x, status:x.status==='discussed'?'open':'discussed', discussedAt:x.status==='open'?new Date().toISOString():null }));
+  };
+
+  const editTopic = async (t, fields) => {
+    await saveTpc(topics.map(x => x.id!==t.id ? x : { ...x, ...fields, editedAt:new Date().toISOString() }));
   };
 
   const deleteTopic = async t => { await saveTpc(topics.filter(x => x.id!==t.id)); };
@@ -540,7 +576,7 @@ function App() {
             <div style={{ marginBottom:28 }}>
               <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Open · {myOpen.length}</div>
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                {myOpen.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={false} />)}
+                {myOpen.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} onEdit={editTopic} isManager={false} />)}
               </div>
             </div>
           )}
@@ -549,7 +585,7 @@ function App() {
             <div>
               <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Discussed · {myDone.length}</div>
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                {myDone.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={false} />)}
+                {myDone.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} onEdit={editTopic} isManager={false} />)}
               </div>
             </div>
           )}
@@ -647,7 +683,7 @@ function App() {
                     </div>
                     {shown.length===0
                       ? <div style={{ padding:'12px 16px', background:s2, borderRadius:8, border:`1px solid ${bdr}`, color:mut, fontSize:13 }}>No open topics</div>
-                      : <div style={{ display:'flex', flexDirection:'column', gap:8 }}>{shown.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={true} />)}</div>
+                      : <div style={{ display:'flex', flexDirection:'column', gap:8 }}>{shown.map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} onEdit={editTopic} isManager={true} />)}</div>
                     }
                   </div>
                 );
@@ -699,7 +735,7 @@ function App() {
                 <div style={{ marginBottom:24 }}>
                   <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Open · {openTopics(focusedMbr.id).length}</div>
                   <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                    {openTopics(focusedMbr.id).map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={true} />)}
+                    {openTopics(focusedMbr.id).map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} onEdit={editTopic} isManager={true} />)}
                   </div>
                 </div>
               )}
@@ -708,7 +744,7 @@ function App() {
                 <div>
                   <div style={{ fontFamily:M, fontSize:10, color:mut, letterSpacing:3, textTransform:'uppercase', marginBottom:12 }}>Discussed · {doneTopics(focusedMbr.id).length}</div>
                   <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                    {doneTopics(focusedMbr.id).map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} isManager={true} />)}
+                    {doneTopics(focusedMbr.id).map(t => <TopicCard key={t.id} topic={t} onCheck={toggleTopic} onDelete={deleteTopic} onEdit={editTopic} isManager={true} />)}
                   </div>
                 </div>
               )}

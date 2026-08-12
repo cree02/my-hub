@@ -55,7 +55,7 @@ const firebaseConfig = {
 };
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
 
 /* ── Firebase helpers ────────────────────────────────────────────────────── */
 let db = null;
@@ -350,6 +350,10 @@ function App() {
   const [formMbrId, setFormMbrId] = useState(null);
   const [showDone, setShowDone]   = useState(false);
 
+  // Manager-only private notes (per member). Stored at o1o/mgrNotes/<memberId>.
+  const [mgrNotes, setMgrNotes]   = useState({});
+  const noteTimers = useRef({});
+
   // Settings
   const [np1, setNp1]           = useState('');
   const [np2, setNp2]           = useState('');
@@ -383,7 +387,9 @@ function App() {
 
     // Topics (real-time — updates on any device)
     const unsub = dbListen('topics', raw => setTopics(toArr(raw)));
-    return unsub;
+    // Manager private notes (real-time, so they follow you across devices)
+    const unsubNotes = dbListen('mgrNotes', raw => setMgrNotes(raw || {}));
+    return () => { unsub(); unsubNotes(); };
   }, []);
 
   /* ── Mutations ────────────────────────────────────────────────────────── */
@@ -396,6 +402,13 @@ function App() {
   const saveTpc = async t => {
     const obj = {}; t.forEach(x => { obj[x.id] = x; });
     await dbSet('topics', obj); // real-time listener handles state update
+  };
+
+  // Private manager notes: update locally right away, save to Firebase after a short pause
+  const saveMgrNote = (memberId, text) => {
+    setMgrNotes(prev => ({ ...prev, [memberId]: text }));
+    if (noteTimers.current[memberId]) clearTimeout(noteTimers.current[memberId]);
+    noteTimers.current[memberId] = setTimeout(() => dbSet(`mgrNotes/${memberId}`, text), 600);
   };
 
   const addTopic = async ({ title, category, notes, memberId }) => {
@@ -723,6 +736,21 @@ function App() {
                   <div style={{ fontSize:13, color:mut, marginTop:3 }}>{openTopics(focusedMbr.id).length} open · {doneTopics(focusedMbr.id).length} discussed</div>
                 </div>
                 <button onClick={() => { setShowForm(true); setFormMbrId(focusedMbr.id); }} style={{ ...mkBtn(), marginLeft:'auto' }}>+ ADD TOPIC</button>
+              </div>
+
+              {/* Manager-only private notes for this person */}
+              <div style={{ marginBottom:24, background:s2, border:`1px solid ${bdr}`, borderRadius:12, padding:16 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, flexWrap:'wrap' }}>
+                  <span style={{ fontFamily:M, fontSize:10, color:acc, letterSpacing:2, textTransform:'uppercase' }}>🔒 Private Notes</span>
+                  <span style={{ fontSize:11, color:mut }}>Only you can see this — never shown to {focusedMbr.name}</span>
+                </div>
+                <textarea
+                  value={mgrNotes[focusedMbr.id] || ''}
+                  onChange={e => saveMgrNote(focusedMbr.id, e.target.value)}
+                  placeholder={`Private prep notes about ${focusedMbr.name} — observations, follow-ups, things to raise…`}
+                  rows={5}
+                  style={{ width:'100%', background:bg, border:`1px solid ${bdr}`, borderRadius:8, padding:'10px 12px', color:txt, fontFamily:F, fontSize:14, lineHeight:1.6, resize:'vertical', outline:'none', boxSizing:'border-box' }}
+                />
               </div>
 
               {showForm && formMbrId===focusedMbr.id && (

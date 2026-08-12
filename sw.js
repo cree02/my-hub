@@ -1,4 +1,4 @@
-const CACHE = 'hub-v9';
+const CACHE = 'hub-v10';
 // Relative to this service worker's location (/my-hub/), so it works on a GitHub project page
 const PRECACHE = [
   './',

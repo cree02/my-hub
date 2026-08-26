@@ -26,34 +26,52 @@
     const ME   = "Chris";
     const THEM = "James";
     const CATEGORIES = ["Phone","Food","Gas","Groceries","Entertainment","Other"];
-    const CAT_EMOJI  = {"Phone":"PHONE","Food":"FOOD","Gas":"GAS","Groceries":"GROC","Entertainment":"FUN","Other":"MISC"};
-    const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
-    const DEFAULT_RECURRING = [
-      { id:"phone-bill-monthly", description:"Phone Bill", amount:"83.00", dayOfMonth:18, paidBy:ME, category:"Phone" }
-    ];
+    const MONTH_NAMES = ["January","February","March","April","May","June",
+                         "July","August","September","October","November","December"];
 
     let allTransactions = [];
     let currentFilter   = "All";
     let recurringList   = [];
+    let cadToUSD        = null;
 
-    const fmt     = n   => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Math.abs(n));
+    // ── Helpers ──────────────────────────────────────────
+    const fmtUSD  = n => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Math.abs(n));
+    const fmtCAD  = n => new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD"}).format(Math.abs(n));
     const fmtDate = iso => new Date(iso+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    const ordinal = n   => { const s=["th","st","nd","rd"],v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); };
+    const ordinal = n => { const s=["th","st","nd","rd"],v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); };
 
-    const balanceAmt  = document.getElementById("balance-amt");
-    const balanceLbl  = document.getElementById("balance-lbl");
-    const txList      = document.getElementById("tx-list");
-    const statusDot   = document.getElementById("status-dot");
-    const statusTxt   = document.getElementById("status-txt");
-    const filterBar   = document.getElementById("filter-bar");
-    const modal       = document.getElementById("modal");
-    const addBtn      = document.getElementById("add-btn");
-    const cancelBtn   = document.getElementById("cancel-btn");
-    const submitBtn   = document.getElementById("submit-btn");
-    const paidBtns    = document.querySelectorAll(".paid-toggle");
-    const recurringEl = document.getElementById("recurring-list");
+    // ── Live CAD rate ─────────────────────────────────────
+    async function fetchRate() {
+      if (cadToUSD) return cadToUSD;
+      try {
+        const res  = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+        const data = await res.json();
+        cadToUSD   = 1 / data.rates.CAD;
+        document.getElementById("rate-display").textContent = "1 CAD = " + cadToUSD.toFixed(4) + " USD";
+        return cadToUSD;
+      } catch(e) {
+        console.warn("Rate fetch failed:", e);
+        return null;
+      }
+    }
 
+    // ── DOM refs ──────────────────────────────────────────
+    const balanceAmt     = document.getElementById("balance-amt");
+    const balanceLbl     = document.getElementById("balance-lbl");
+    const txList         = document.getElementById("tx-list");
+    const statusDot      = document.getElementById("status-dot");
+    const statusTxt      = document.getElementById("status-txt");
+    const filterBar      = document.getElementById("filter-bar");
+    const modal          = document.getElementById("modal");
+    const addBtn         = document.getElementById("add-btn");
+    const cancelBtn      = document.getElementById("cancel-btn");
+    const submitBtn      = document.getElementById("submit-btn");
+    const paidBtns       = document.querySelectorAll(".paid-toggle");
+    const recurringEl    = document.getElementById("recurring-list");
+    const currencySelect = document.getElementById("f-currency");
+    const cadPreview     = document.getElementById("cad-preview");
+
+    // ── Filter pills ──────────────────────────────────────
     ["All",...CATEGORIES].forEach(cat => {
       const btn = document.createElement("button");
       btn.className = "filter-pill" + (cat==="All"?" active":"");
@@ -67,33 +85,67 @@
       filterBar.appendChild(btn);
     });
 
+    // ── Render ────────────────────────────────────────────
     function render() {
-      const balance = allTransactions.reduce((acc,t)=>t.paidBy===ME?acc+parseFloat(t.amount):acc-parseFloat(t.amount),0);
+      const balance = allTransactions.reduce((acc,t) => {
+        const usd = parseFloat(t.amountUSD ?? t.amount);
+        return t.paidBy === ME ? acc + usd : acc - usd;
+      }, 0);
       balanceAmt.style.color = balance>0?"#4ade80":balance<0?"#f87171":"#94a3b8";
-      balanceAmt.textContent = balance===0?"—":fmt(balance);
-      balanceLbl.textContent = balance>0?THEM+" owes you "+fmt(balance):balance<0?"You owe "+THEM+" "+fmt(balance):"You're all square!";
+      balanceAmt.textContent = balance===0?"—":fmtUSD(balance);
+      balanceLbl.textContent = balance>0
+        ? THEM+" owes you "+fmtUSD(balance)
+        : balance<0
+        ? "You owe "+THEM+" "+fmtUSD(balance)
+        : "You're all square!";
 
-      const filtered = currentFilter==="All"?allTransactions:allTransactions.filter(t=>t.category===currentFilter);
-      if(filtered.length===0){ txList.innerHTML='<div class="empty">'+(currentFilter==="All"?"No transactions yet.":"No transactions in this category.")+"</div>"; return; }
+      const filtered = currentFilter==="All"
+        ? allTransactions
+        : allTransactions.filter(t=>t.category===currentFilter);
 
-      txList.innerHTML='<div class="tx-header"><span>Date</span><span>Description</span><span style="text-align:right">Amount</span><span style="text-align:center">Paid By</span><span></span></div>';
-      filtered.forEach(t=>{
-        const row=document.createElement("div");
-        row.className="tx-row";
-        const autoTag=t.auto?'<span class="auto-tag">auto</span>':"";
-        row.innerHTML='<span class="tx-date">'+fmtDate(t.date)+'</span><div class="tx-desc"><div class="tx-desc-main">'+t.description+" "+autoTag+'</div><div class="tx-desc-sub">'+t.category+(t.note?" · "+t.note:"")+'</div></div><span class="tx-amt" style="color:'+(t.paidBy===ME?"#4ade80":"#60a5fa")+'">'+ fmt(t.amount)+'</span><span class="tx-paid">'+t.paidBy+'</span><button class="del-btn" data-id="'+t.firebaseKey+'">×</button>';
+      if (filtered.length===0) {
+        txList.innerHTML='<div class="empty">'+(currentFilter==="All"?"No transactions yet.":"No transactions in this category.")+"</div>";
+        return;
+      }
+
+      txList.innerHTML='<div class="tx-header"><span>Date</span><span>Description</span>'
+        +'<span style="text-align:right">Amount (USD)</span><span style="text-align:center">Paid By</span><span></span></div>';
+
+      filtered.forEach(t => {
+        const row = document.createElement("div");
+        row.className = "tx-row";
+        const usd     = parseFloat(t.amountUSD ?? t.amount);
+        const autoTag = t.auto ? '<span class="auto-tag">auto</span>' : "";
+        const cadLine = (t.currency==="CAD" && t.amountCAD)
+          ? '<div class="tx-cad">'+fmtCAD(t.amountCAD)+' @ '+parseFloat(t.rateUsed).toFixed(4)+'</div>'
+          : "";
+        row.innerHTML =
+          '<span class="tx-date">'+fmtDate(t.date)+'</span>'
+          +'<div class="tx-desc"><div class="tx-desc-main">'+t.description+" "+autoTag+'</div>'
+          +'<div class="tx-desc-sub">'+t.category+(t.note?" · "+t.note:"")+'</div></div>'
+          +'<div style="text-align:right"><span class="tx-amt" style="color:'+(t.paidBy===ME?"#4ade80":"#60a5fa")+'">'+fmtUSD(usd)+'</span>'+cadLine+'</div>'
+          +'<span class="tx-paid">'+t.paidBy+'</span>'
+          +'<button class="del-btn" data-id="'+t.firebaseKey+'">×</button>';
         txList.appendChild(row);
       });
-      document.querySelectorAll(".del-btn").forEach(btn=>btn.addEventListener("click",()=>deleteTx(btn.dataset.id)));
+      document.querySelectorAll(".del-btn").forEach(btn =>
+        btn.addEventListener("click", ()=>deleteTx(btn.dataset.id)));
     }
 
+    // ── Recurring panel ───────────────────────────────────
     function renderRecurring() {
-      if(recurringList.length===0){ recurringEl.innerHTML='<div style="font-size:12px;color:#334155;padding:8px 0">No recurring transactions set up.</div>'; return; }
+      if (recurringList.length===0) {
+        recurringEl.innerHTML='<div style="font-size:12px;color:#334155;padding:8px 0">No recurring transactions set up.</div>';
+        return;
+      }
       recurringEl.innerHTML="";
-      recurringList.forEach(r=>{
+      recurringList.forEach(r => {
         const div=document.createElement("div");
         div.className="recurring-row";
-        div.innerHTML='<div style="font-size:13px;color:#cbd5e1">'+r.description+'</div><div style="font-size:11px;color:#475569;margin-top:3px">'+ fmt(r.amount)+" · paid by "+r.paidBy+" · posts on the <strong style='color:#94a3b8'>"+ordinal(r.dayOfMonth)+"</strong> of each month</div>";
+        div.innerHTML='<div style="font-size:13px;color:#cbd5e1">'+r.description+'</div>'
+          +'<div style="font-size:11px;color:#475569;margin-top:3px">'
+          +fmtUSD(r.amount)+' · paid by '+r.paidBy
+          +' · posts on the <strong style="color:#94a3b8">'+ordinal(r.dayOfMonth)+'</strong> of each month</div>';
         recurringEl.appendChild(div);
       });
     }
@@ -101,87 +153,136 @@
     async function processRecurring() {
       const now=new Date(), today=now.getDate(), year=now.getFullYear(), month=now.getMonth();
       const monthKey=year+"-"+String(month+1).padStart(2,"0");
-      for(const r of recurringList){
-        if(today<r.dayOfMonth) continue;
-        const logRef=ref(db,"recurring_log/"+monthKey+"-"+r.id);
-        const snap=await get(logRef);
-        if(snap.exists()) continue;
-        const dateStr=year+"-"+String(month+1).padStart(2,"0")+"-"+String(r.dayOfMonth).padStart(2,"0");
-        const description=r.description+" - "+MONTH_NAMES[month];
-        await push(txRef,{date:dateStr,description,amount:r.amount,paidBy:r.paidBy,category:r.category,note:"",auto:true});
+      for (const r of recurringList) {
+        if (today < r.dayOfMonth) continue;
+        const logRef = ref(db,"recurring_log/"+monthKey+"-"+r.id);
+        const snap   = await get(logRef);
+        if (snap.exists()) continue;
+        const dateStr = year+"-"+String(month+1).padStart(2,"0")+"-"+String(r.dayOfMonth).padStart(2,"0");
+        const description = r.description+" - "+MONTH_NAMES[month];
+        await push(txRef,{date:dateStr,description,amount:r.amount,amountUSD:r.amount,
+          currency:"USD",paidBy:r.paidBy,category:r.category,note:"",auto:true});
         await set(logRef,{postedAt:new Date().toISOString(),description});
       }
     }
 
+    // ── Seed / migrate recurring ──────────────────────────
     async function seedRecurring() {
-      const recurRef=ref(db,"recurring");
-      const snap=await get(recurRef);
-      if(snap.exists()){
-        recurringList=[];
-        snap.forEach(child=>recurringList.push({...child.val(),firebaseKey:child.key}));
-      } else {
-        for(const r of DEFAULT_RECURRING) await set(ref(db,"recurring/"+r.id),r);
-        recurringList=[...DEFAULT_RECURRING];
+      const oldRef  = ref(db,"recurring/phone-bill-monthly");
+      const oldSnap = await get(oldRef);
+      if (oldSnap.exists()) await remove(oldRef);
+
+      const recurRef = ref(db,"recurring");
+      const snap = await get(recurRef);
+      if (snap.exists()) {
+        recurringList = [];
+        snap.forEach(child => recurringList.push({...child.val(),firebaseKey:child.key}));
       }
       renderRecurring();
       await processRecurring();
     }
 
-    const sortTx=()=>allTransactions.sort((a,b)=>new Date(b.date)-new Date(a.date)||b.firebaseKey.localeCompare(a.firebaseKey));
-    function upsertTx(child){
+    // ── Firebase listeners (reliable incremental pattern) ─
+    const sortTx = () => allTransactions.sort((a,b)=>new Date(b.date)-new Date(a.date)||b.firebaseKey.localeCompare(a.firebaseKey));
+    function upsertTx(child) {
       const t={...child.val(),firebaseKey:child.key};
       const i=allTransactions.findIndex(x=>x.firebaseKey===t.firebaseKey);
       if(i>=0) allTransactions[i]=t; else allTransactions.push(t);
       sortTx(); render(); setStatus(true);
     }
-    function removeTx(child){
+    function removeTx(child) {
       allTransactions=allTransactions.filter(x=>x.firebaseKey!==child.key);
       render(); setStatus(true);
     }
-    // Instant, reliable first load (one-time fetch always returns the full set)
     get(txRef).then(snap=>{
       snap.forEach(c=>{ if(!allTransactions.some(x=>x.firebaseKey===c.key)) allTransactions.push({...c.val(),firebaseKey:c.key}); });
       sortTx(); render(); setStatus(true);
     }).catch(()=>setStatus(false));
-    // Live per-transaction updates — incremental, so a slow sync can never wipe the list
-    onChildAdded(txRef, upsertTx);
+    onChildAdded(txRef,   upsertTx);
     onChildChanged(txRef, upsertTx);
     onChildRemoved(txRef, removeTx);
 
-    function setStatus(ok){ statusDot.style.background=ok?"#4ade80":"#f87171"; statusTxt.textContent=ok?"Live":"Offline"; }
+    function setStatus(ok) {
+      statusDot.style.background = ok?"#4ade80":"#f87171";
+      statusTxt.textContent      = ok?"Live":"Offline";
+    }
 
-    let selectedPaidBy=ME;
-    paidBtns.forEach(btn=>btn.addEventListener("click",()=>{ selectedPaidBy=btn.dataset.who; paidBtns.forEach(b=>b.classList.remove("active")); btn.classList.add("active"); }));
-    addBtn.addEventListener("click",()=>{ modal.style.display="flex"; });
-    cancelBtn.addEventListener("click",()=>{ modal.style.display="none"; clearForm(); });
-    modal.addEventListener("click",e=>{ if(e.target===modal){ modal.style.display="none"; clearForm(); } });
+    // ── CAD preview ───────────────────────────────────────
+    async function updateCadPreview() {
+      const amt = parseFloat(document.getElementById("f-amt").value);
+      if (currencySelect.value==="CAD" && !isNaN(amt) && amt>0) {
+        const rate = await fetchRate();
+        if (rate) {
+          cadPreview.style.display = "block";
+          cadPreview.textContent   = "≈ "+fmtUSD(amt*rate)+" USD at today's rate";
+        }
+      } else {
+        cadPreview.style.display = "none";
+      }
+    }
+    currencySelect.addEventListener("change", updateCadPreview);
+    document.getElementById("f-amt").addEventListener("input", updateCadPreview);
+    fetchRate();
 
-    submitBtn.addEventListener("click",async()=>{
-      const date=document.getElementById("f-date").value;
-      const desc=document.getElementById("f-desc").value.trim();
-      const amt=parseFloat(document.getElementById("f-amt").value);
-      const cat=document.getElementById("f-cat").value;
-      const note=document.getElementById("f-note").value.trim();
-      if(!date||!desc||isNaN(amt)||amt<=0){ alert("Please fill in date, description, and a valid amount."); return; }
+    // ── Add transaction ───────────────────────────────────
+    let selectedPaidBy = ME;
+    paidBtns.forEach(btn => btn.addEventListener("click", () => {
+      selectedPaidBy = btn.dataset.who;
+      paidBtns.forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+    }));
+    addBtn.addEventListener("click",    ()=>{ modal.style.display="flex"; });
+    cancelBtn.addEventListener("click", ()=>{ modal.style.display="none"; clearForm(); });
+    modal.addEventListener("click", e  =>{ if(e.target===modal){ modal.style.display="none"; clearForm(); } });
+
+    submitBtn.addEventListener("click", async () => {
+      const date     = document.getElementById("f-date").value;
+      const desc     = document.getElementById("f-desc").value.trim();
+      const amt      = parseFloat(document.getElementById("f-amt").value);
+      const cat      = document.getElementById("f-cat").value;
+      const note     = document.getElementById("f-note").value.trim();
+      const currency = currencySelect.value;
+      if (!date||!desc||isNaN(amt)||amt<=0) { alert("Please fill in date, description, and a valid amount."); return; }
       submitBtn.disabled=true; submitBtn.textContent="Saving...";
-      try{ await push(txRef,{date,description:desc,amount:amt.toFixed(2),paidBy:selectedPaidBy,category:cat,note,auto:false}); modal.style.display="none"; clearForm(); }
-      catch(e){ alert("Failed to save. Check your connection."); }
+      try {
+        let entry = { date, description:desc, category:cat, paidBy:selectedPaidBy, note, auto:false, currency };
+        if (currency==="CAD") {
+          const rate = await fetchRate();
+          if (!rate) { alert("Could not fetch exchange rate. Please try again."); submitBtn.disabled=false; submitBtn.textContent="Add Transaction"; return; }
+          const usd = amt * rate;
+          entry.amountCAD = amt.toFixed(2);
+          entry.amountUSD = usd.toFixed(2);
+          entry.amount    = usd.toFixed(2);
+          entry.rateUsed  = rate.toFixed(6);
+        } else {
+          entry.amount    = amt.toFixed(2);
+          entry.amountUSD = amt.toFixed(2);
+        }
+        await push(txRef, entry);
+        modal.style.display="none";
+        clearForm();
+      } catch(e) { alert("Failed to save. Check your connection."); }
       submitBtn.disabled=false; submitBtn.textContent="Add Transaction";
     });
 
-    async function deleteTx(key){ if(!confirm("Remove this transaction?")) return; await remove(ref(db,"transactions/"+key)); }
+    async function deleteTx(key) {
+      if (!confirm("Remove this transaction?")) return;
+      await remove(ref(db,"transactions/"+key));
+    }
 
-    function clearForm(){
-      document.getElementById("f-date").value=new Date().toISOString().split("T")[0];
-      document.getElementById("f-desc").value="";
-      document.getElementById("f-amt").value="";
-      document.getElementById("f-note").value="";
-      document.getElementById("f-cat").value=CATEGORIES[0];
-      selectedPaidBy=ME;
+    function clearForm() {
+      document.getElementById("f-date").value = new Date().toISOString().split("T")[0];
+      document.getElementById("f-desc").value = "";
+      document.getElementById("f-amt").value  = "";
+      document.getElementById("f-note").value = "";
+      document.getElementById("f-cat").value  = CATEGORIES[0];
+      currencySelect.value = "USD";
+      cadPreview.style.display = "none";
+      selectedPaidBy = ME;
       paidBtns.forEach((b,i)=>b.classList.toggle("active",i===0));
     }
 
-    document.getElementById("f-date").value=new Date().toISOString().split("T")[0];
+    document.getElementById("f-date").value = new Date().toISOString().split("T")[0];
     paidBtns[0].classList.add("active");
     seedRecurring();
   </script>
@@ -195,8 +296,10 @@
     .header-inner{max-width:720px;margin:0 auto;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
     .eyebrow{font-size:10px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;margin-bottom:4px}
     h1{font-family:'Playfair Display',Georgia,serif;font-size:26px;font-weight:900;color:#f8fafc;letter-spacing:-.01em}
-    .status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);margin-top:6px}
+    .status-row{display:flex;align-items:center;gap:16px;margin-top:6px;flex-wrap:wrap}
+    .status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim)}
     #status-dot{width:7px;height:7px;border-radius:50%;background:var(--border2)}
+    #rate-display{font-size:11px;color:var(--muted)}
     .balance-card{max-width:720px;margin:20px auto 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .balance-label{font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
     #balance-amt{font-size:28px;font-weight:500;letter-spacing:-.02em}
@@ -210,97 +313,11 @@
     #filter-bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:20px}
     .filter-pill{background:transparent;border:1px solid var(--border2);color:var(--dim);padding:5px 12px;border-radius:20px;cursor:pointer;font-family:'DM Mono',monospace;font-size:11px;white-space:nowrap;transition:all .15s}
     .filter-pill.active{background:var(--card);border-color:var(--blue);color:var(--blue-lt)}
-    .tx-header{display:grid;grid-template-columns:90px 1fr 84px 72px 24px;gap:12px;padding:6px 12px;font-size:10px;color:var(--border2);letter-spacing:.1em;text-transform:uppercase}
-    .tx-row{display:grid;grid-template-columns:90px 1fr 84px 72px 24px;gap:12px;padding:12px;border-radius:6px;align-items:start;transition:background .15s}
+    .tx-header{display:grid;grid-template-columns:90px 1fr 100px 72px 24px;gap:12px;padding:6px 12px;font-size:10px;color:var(--border2);letter-spacing:.1em;text-transform:uppercase}
+    .tx-row{display:grid;grid-template-columns:90px 1fr 100px 72px 24px;gap:12px;padding:12px;border-radius:6px;align-items:start;transition:background .15s}
     .tx-row:hover{background:rgba(255,255,255,.025)}
     .tx-row:hover .del-btn{opacity:1}
     .tx-date{font-size:11px;color:var(--muted);padding-top:2px}
     .tx-desc-main{font-size:13px;color:#cbd5e1;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
     .tx-desc-sub{font-size:10px;color:var(--border2);margin-top:2px}
-    .tx-amt{font-size:14px;font-weight:500;text-align:right;padding-top:2px}
-    .tx-paid{font-size:10px;color:var(--muted);text-align:center;background:var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .del-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px;border-radius:4px;opacity:0;transition:all .15s;line-height:1.4}
-    .del-btn:hover{color:var(--red);background:rgba(248,113,113,.1)}
-    .auto-tag{font-size:9px;background:rgba(251,191,36,.12);color:var(--amber);border:1px solid rgba(251,191,36,.25);border-radius:3px;padding:1px 5px;letter-spacing:.05em;text-transform:uppercase}
-    .empty{text-align:center;color:var(--border2);font-size:13px;padding:60px 0}
-    .legend{margin-top:32px;display:flex;gap:20px;font-size:11px;color:var(--border2);flex-wrap:wrap}
-    .btn-primary{background:var(--blue);border:none;color:white;padding:10px 20px;border-radius:6px;cursor:pointer;font-family:'DM Mono',monospace;font-size:13px;letter-spacing:.05em;transition:all .15s}
-    .btn-primary:hover{background:#2563eb;transform:translateY(-1px)}
-    .btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
-    .btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--subtle);padding:8px 16px;border-radius:6px;cursor:pointer;font-family:'DM Mono',monospace;font-size:12px;transition:all .15s}
-    .btn-ghost:hover{border-color:var(--muted);color:#cbd5e1}
-    #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px);padding:20px}
-    .modal-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px;width:100%;max-width:440px;box-shadow:0 25px 50px rgba(0,0,0,.5)}
-    .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
-    .modal-title{font-family:'Playfair Display',Georgia,serif;font-size:20px;font-weight:700;color:#f8fafc}
-    .field{margin-bottom:16px}
-    .field label{display:block;font-size:11px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
-    .input,.select{width:100%;background:#1e293b;border:1px solid var(--border2);color:var(--text);padding:9px 12px;border-radius:6px;font-family:'DM Mono',monospace;font-size:13px;outline:none;transition:border .15s}
-    .input:focus,.select:focus{border-color:var(--blue)}
-    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .toggle-group{display:flex}
-    .paid-toggle{flex:1;padding:9px;border:1px solid var(--border2);background:transparent;color:var(--dim);cursor:pointer;font-family:'DM Mono',monospace;font-size:12px;transition:all .15s}
-    .paid-toggle:first-child{border-radius:6px 0 0 6px}
-    .paid-toggle:last-child{border-radius:0 6px 6px 0;border-left:none}
-    .paid-toggle.active{background:#1e3a5f;border-color:var(--blue);color:var(--blue-lt)}
-    .modal-footer{display:flex;gap:10px;margin-top:20px}
-  </style>
-</head>
-<body>
-  <a href="https://cree02.github.io/my-hub/" style="position:fixed;top:10px;right:12px;z-index:9999;background:rgba(30,45,69,0.85);color:#93c5fd;font-size:12px;font-family:system-ui,sans-serif;padding:5px 11px;border-radius:20px;text-decoration:none;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.12);">&larr; Hub</a>
-  <div class="header">
-    <div class="header-inner">
-      <div>
-        <div class="eyebrow">Shared Ledger</div>
-        <h1>Chris &amp; James</h1>
-        <div class="status"><span id="status-dot"></span><span id="status-txt">Connecting…</span></div>
-      </div>
-      <button class="btn-primary" id="add-btn">+ Add Transaction</button>
-    </div>
-    <div class="balance-card">
-      <div><div class="balance-label">Current Balance</div><div id="balance-amt" style="color:#94a3b8">—</div></div>
-      <div id="balance-lbl" style="font-size:13px;color:#64748b">Loading…</div>
-    </div>
-  </div>
-  <div class="content">
-    <div class="recurring-panel">
-      <div class="recurring-title">🔁 Recurring Transactions</div>
-      <div id="recurring-list"><div style="font-size:12px;color:#334155;padding:4px 0">Loading…</div></div>
-    </div>
-    <div id="filter-bar"></div>
-    <div id="tx-list"><div class="empty">Connecting to database…</div></div>
-    <div class="legend">
-      <span><span style="color:#4ade80">■</span> Paid by Chris</span>
-      <span><span style="color:#60a5fa">■</span> Paid by James</span>
-      <span><span style="color:#fbbf24">■</span> Auto-posted</span>
-    </div>
-  </div>
-  <div id="modal">
-    <div class="modal-box">
-      <div class="modal-header"><div class="modal-title">New Transaction</div><button class="btn-ghost" id="cancel-btn">✕</button></div>
-      <div class="two-col">
-        <div class="field"><label>Date</label><input type="date" class="input" id="f-date"/></div>
-        <div class="field"><label>Amount ($)</label><input type="number" class="input" id="f-amt" placeholder="0.00" step="0.01" min="0"/></div>
-      </div>
-      <div class="field"><label>Description</label><input type="text" class="input" id="f-desc" placeholder="e.g. Dinner split"/></div>
-      <div class="field"><label>Category</label>
-        <select class="select" id="f-cat">
-          <option>Phone</option><option>Food</option><option>Gas</option>
-          <option>Groceries</option><option>Entertainment</option><option>Other</option>
-        </select>
-      </div>
-      <div class="field"><label>Paid By</label>
-        <div class="toggle-group">
-          <button class="paid-toggle" data-who="Chris">Chris</button>
-          <button class="paid-toggle" data-who="James">James</button>
-        </div>
-      </div>
-      <div class="field"><label>Note (optional)</label><input type="text" class="input" id="f-note" placeholder="Any extra context…"/></div>
-      <div class="modal-footer">
-        <button class="btn-ghost" onclick="document.getElementById('modal').style.display='none'">Cancel</button>
-        <button class="btn-primary" id="submit-btn" style="flex:2">Add Transaction</button>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
+    .tx-amt{font-size:14px;font-weight:500;display:block}

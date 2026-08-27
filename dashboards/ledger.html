@@ -34,38 +34,41 @@
     let recurringList   = [];
     let cadToUSD        = null;
 
-    // ── Helpers ──────────────────────────────────────────
     const fmtUSD  = n => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Math.abs(n));
     const fmtCAD  = n => new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD"}).format(Math.abs(n));
     const fmtDate = iso => new Date(iso+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
     const ordinal = n => { const s=["th","st","nd","rd"],v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); };
 
-    // ── Live CAD rate (cached in localStorage per day) ───
+    // ── localStorage helper (safe — never throws) ────────
+    function lsGet(key) { try { return localStorage.getItem(key); } catch(e) { return null; } }
+    function lsSet(key,val) { try { localStorage.setItem(key,val); } catch(e) { /* ignored */ } }
+
+    // ── Live CAD rate (cached per day when possible) ──────
     async function fetchRate() {
       if (cadToUSD) return cadToUSD;
-      const today    = new Date().toISOString().split("T")[0];
-      const cached   = localStorage.getItem("cadRate");
-      const cachedDt = localStorage.getItem("cadRateDate");
-      if (cached && cachedDt === today) {
-        cadToUSD = parseFloat(cached);
-        document.getElementById("rate-display").textContent = "1 CAD = " + cadToUSD.toFixed(4) + " USD";
-        return cadToUSD;
-      }
       try {
+        const today    = new Date().toISOString().split("T")[0];
+        const cached   = lsGet("cadRate");
+        const cachedDt = lsGet("cadRateDate");
+        if (cached && cachedDt === today) {
+          cadToUSD = parseFloat(cached);
+          document.getElementById("rate-display").textContent = "1 CAD = " + cadToUSD.toFixed(4) + " USD";
+          return cadToUSD;
+        }
         const res  = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
         const data = await res.json();
         cadToUSD   = 1 / data.rates.CAD;
-        localStorage.setItem("cadRate",     cadToUSD.toString());
-        localStorage.setItem("cadRateDate", today);
+        lsSet("cadRate",     cadToUSD.toString());
+        lsSet("cadRateDate", today);
         document.getElementById("rate-display").textContent = "1 CAD = " + cadToUSD.toFixed(4) + " USD";
         return cadToUSD;
       } catch(e) {
         console.warn("Rate fetch failed:", e);
+        document.getElementById("rate-display").textContent = "";
         return null;
       }
     }
 
-    // ── DOM refs ──────────────────────────────────────────
     const balanceAmt     = document.getElementById("balance-amt");
     const balanceLbl     = document.getElementById("balance-lbl");
     const txList         = document.getElementById("tx-list");
@@ -81,7 +84,6 @@
     const currencySelect = document.getElementById("f-currency");
     const cadPreview     = document.getElementById("cad-preview");
 
-    // ── Filter pills ──────────────────────────────────────
     ["All",...CATEGORIES].forEach(cat => {
       const btn = document.createElement("button");
       btn.className = "filter-pill" + (cat==="All"?" active":"");
@@ -95,7 +97,6 @@
       filterBar.appendChild(btn);
     });
 
-    // ── Render ────────────────────────────────────────────
     function render() {
       const balance = allTransactions.reduce((acc,t) => {
         const usd = parseFloat(t.amountUSD ?? t.amount);
@@ -109,7 +110,6 @@
         : balance<0
         ? "You owe "+THEM+" "+fmtUSD(balance)
         : "You're all square!";
-      // CAD equivalent
       const cadEl = document.getElementById("balance-cad");
       if (cadToUSD && balance !== 0) {
         cadEl.textContent   = fmtCAD(balance / cadToUSD) + " CAD";
@@ -143,107 +143,4 @@
         const row = document.createElement("div");
         row.className = "tx-row";
         const usd     = parseFloat(t.amountUSD ?? t.amount);
-        const autoTag = t.auto ? '<span class="auto-tag">auto</span>' : "";
-        const cadLine = (t.currency==="CAD" && t.amountCAD)
-          ? '<div class="tx-cad">'+fmtCAD(t.amountCAD)+' @ '+parseFloat(t.rateUsed).toFixed(4)+'</div>'
-          : "";
-        row.innerHTML =
-          '<span class="tx-date">'+fmtDate(t.date)+'</span>'
-          +'<div class="tx-desc"><div class="tx-desc-main">'+t.description+" "+autoTag+'</div>'
-          +'<div class="tx-desc-sub">'+t.category+(t.note?" · "+t.note:"")+'</div></div>'
-          +'<div style="text-align:right"><span class="tx-amt" style="color:'+(t.paidBy===ME?"#4ade80":"#60a5fa")+'">'+fmtUSD(usd)+'</span>'+cadLine+'</div>'
-          +'<span class="tx-paid">'+t.paidBy+'</span>'
-          +'<button class="del-btn" data-id="'+t.firebaseKey+'">×</button>';
-        txList.appendChild(row);
-      });
-      document.querySelectorAll(".del-btn").forEach(btn =>
-        btn.addEventListener("click", ()=>deleteTx(btn.dataset.id)));
-    }
-
-    // ── Recurring panel ───────────────────────────────────
-    function renderRecurring() {
-      if (recurringList.length===0) {
-        recurringEl.innerHTML='<div style="font-size:12px;color:#334155;padding:8px 0">No recurring transactions set up.</div>';
-        return;
-      }
-      recurringEl.innerHTML="";
-      recurringList.forEach(r => {
-        const div=document.createElement("div");
-        div.className="recurring-row";
-        div.innerHTML='<div style="font-size:13px;color:#cbd5e1">'+r.description+'</div>'
-          +'<div style="font-size:11px;color:#475569;margin-top:3px">'
-          +fmtUSD(r.amount)+' · paid by '+r.paidBy
-          +' · posts on the <strong style="color:#94a3b8">'+ordinal(r.dayOfMonth)+'</strong> of each month</div>';
-        recurringEl.appendChild(div);
-      });
-    }
-
-    async function processRecurring() {
-      const now=new Date(), today=now.getDate(), year=now.getFullYear(), month=now.getMonth();
-      const monthKey=year+"-"+String(month+1).padStart(2,"0");
-      for (const r of recurringList) {
-        if (today < r.dayOfMonth) continue;
-        const logRef = ref(db,"recurring_log/"+monthKey+"-"+r.id);
-        const snap   = await get(logRef);
-        if (snap.exists()) continue;
-        const dateStr = year+"-"+String(month+1).padStart(2,"0")+"-"+String(r.dayOfMonth).padStart(2,"0");
-        const description = r.description+" - "+MONTH_NAMES[month];
-        await push(txRef,{date:dateStr,description,amount:r.amount,amountUSD:r.amount,
-          currency:"USD",paidBy:r.paidBy,category:r.category,note:"",auto:true});
-        await set(logRef,{postedAt:new Date().toISOString(),description});
-      }
-    }
-
-    // ── Seed / migrate recurring ──────────────────────────
-    async function seedRecurring() {
-      const oldRef  = ref(db,"recurring/phone-bill-monthly");
-      const oldSnap = await get(oldRef);
-      if (oldSnap.exists()) await remove(oldRef);
-
-      const recurRef = ref(db,"recurring");
-      const snap = await get(recurRef);
-      if (snap.exists()) {
-        recurringList = [];
-        snap.forEach(child => recurringList.push({...child.val(),firebaseKey:child.key}));
-      }
-      renderRecurring();
-      await processRecurring();
-    }
-
-    // ── Firebase listeners (reliable incremental pattern) ─
-    const sortTx = () => allTransactions.sort((a,b)=>new Date(b.date)-new Date(a.date)||b.firebaseKey.localeCompare(a.firebaseKey));
-    function upsertTx(child) {
-      const t={...child.val(),firebaseKey:child.key};
-      const i=allTransactions.findIndex(x=>x.firebaseKey===t.firebaseKey);
-      if(i>=0) allTransactions[i]=t; else allTransactions.push(t);
-      sortTx(); render(); setStatus(true);
-    }
-    function removeTx(child) {
-      allTransactions=allTransactions.filter(x=>x.firebaseKey!==child.key);
-      render(); setStatus(true);
-    }
-    get(txRef).then(snap=>{
-      snap.forEach(c=>{ if(!allTransactions.some(x=>x.firebaseKey===c.key)) allTransactions.push({...c.val(),firebaseKey:c.key}); });
-      sortTx(); render(); setStatus(true);
-    }).catch(()=>setStatus(false));
-    onChildAdded(txRef,   upsertTx);
-    onChildChanged(txRef, upsertTx);
-    onChildRemoved(txRef, removeTx);
-
-    function setStatus(ok) {
-      statusDot.style.background = ok?"#4ade80":"#f87171";
-      statusTxt.textContent      = ok?"Live":"Offline";
-    }
-
-    // ── CAD preview ───────────────────────────────────────
-    async function updateCadPreview() {
-      const amt = parseFloat(document.getElementById("f-amt").value);
-      if (currencySelect.value==="CAD" && !isNaN(amt) && amt>0) {
-        const rate = await fetchRate();
-        if (rate) {
-          cadPreview.style.display = "block";
-          cadPreview.textContent   = "≈ "+fmtUSD(amt*rate)+" USD at today's rate";
-        }
-      } else {
-        cadPreview.style.display = "none";
-      }
+        const autoTag = t.auto ? '<span

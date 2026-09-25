@@ -34,6 +34,7 @@
     let recurringList   = [];
     let cadToUSD        = null;
 
+    // ── Helpers ──────────────────────────────────────────
     const fmtUSD  = n => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Math.abs(n));
     const fmtCAD  = n => new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD"}).format(Math.abs(n));
     const fmtDate = iso => new Date(iso+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
@@ -69,6 +70,7 @@
       }
     }
 
+    // ── DOM refs ──────────────────────────────────────────
     const balanceAmt     = document.getElementById("balance-amt");
     const balanceLbl     = document.getElementById("balance-lbl");
     const txList         = document.getElementById("tx-list");
@@ -84,6 +86,7 @@
     const currencySelect = document.getElementById("f-currency");
     const cadPreview     = document.getElementById("cad-preview");
 
+    // ── Filter pills ──────────────────────────────────────
     ["All",...CATEGORIES].forEach(cat => {
       const btn = document.createElement("button");
       btn.className = "filter-pill" + (cat==="All"?" active":"");
@@ -97,6 +100,7 @@
       filterBar.appendChild(btn);
     });
 
+    // ── Render ────────────────────────────────────────────
     function render() {
       const balance = allTransactions.reduce((acc,t) => {
         const usd = parseFloat(t.amountUSD ?? t.amount);
@@ -110,10 +114,11 @@
         : balance<0
         ? "You owe "+THEM+" "+fmtUSD(balance)
         : "You're all square!";
+      // CAD equivalent
       const cadEl = document.getElementById("balance-cad");
       if (cadToUSD && balance !== 0) {
-        cadEl.textContent   = fmtCAD(balance / cadToUSD) + " CAD";
-        cadEl.style.color   = color;
+        cadEl.textContent  = fmtCAD(balance / cadToUSD) + " CAD";
+        cadEl.style.color  = color;
         cadEl.style.display = "block";
       } else if (!cadToUSD && balance !== 0) {
         fetchRate().then(rate => {
@@ -160,6 +165,7 @@
         btn.addEventListener("click", ()=>deleteTx(btn.dataset.id)));
     }
 
+    // ── Recurring panel ───────────────────────────────────
     function renderRecurring() {
       if (recurringList.length===0) {
         recurringEl.innerHTML='<div style="font-size:12px;color:#334155;padding:8px 0">No recurring transactions set up.</div>';
@@ -193,10 +199,13 @@
       }
     }
 
+    // ── Seed / migrate recurring ──────────────────────────
     async function seedRecurring() {
+      // Remove old phone-bill recurring entry if present
       const oldRef  = ref(db,"recurring/phone-bill-monthly");
       const oldSnap = await get(oldRef);
       if (oldSnap.exists()) await remove(oldRef);
+
       const recurRef = ref(db,"recurring");
       const snap = await get(recurRef);
       if (snap.exists()) {
@@ -207,6 +216,7 @@
       await processRecurring();
     }
 
+    // ── Firebase listeners (reliable incremental pattern) ─
     const sortTx = () => allTransactions.sort((a,b)=>new Date(b.date)-new Date(a.date)||b.firebaseKey.localeCompare(a.firebaseKey));
     function upsertTx(child) {
       const t={...child.val(),firebaseKey:child.key};
@@ -218,10 +228,12 @@
       allTransactions=allTransactions.filter(x=>x.firebaseKey!==child.key);
       render(); setStatus(true);
     }
+    // One-time fetch for fast first load
     get(txRef).then(snap=>{
       snap.forEach(c=>{ if(!allTransactions.some(x=>x.firebaseKey===c.key)) allTransactions.push({...c.val(),firebaseKey:c.key}); });
       sortTx(); render(); setStatus(true);
     }).catch(()=>setStatus(false));
+    // Incremental live updates
     onChildAdded(txRef,   upsertTx);
     onChildChanged(txRef, upsertTx);
     onChildRemoved(txRef, removeTx);
@@ -231,13 +243,14 @@
       statusTxt.textContent      = ok?"Live":"Offline";
     }
 
+    // ── CAD preview ───────────────────────────────────────
     async function updateCadPreview() {
       const amt = parseFloat(document.getElementById("f-amt").value);
       if (currencySelect.value==="CAD" && !isNaN(amt) && amt>0) {
         const rate = await fetchRate();
         if (rate) {
           cadPreview.style.display = "block";
-          cadPreview.textContent   = "≈ "+fmtUSD(amt*rate)+" USD at today's rate";
+          cadPreview.textContent   = "≈ "+fmtUSD(amt*rate)+" USD at today’s rate";
         }
       } else {
         cadPreview.style.display = "none";
@@ -247,6 +260,7 @@
     document.getElementById("f-amt").addEventListener("input", updateCadPreview);
     fetchRate();
 
+    // ── Add transaction ───────────────────────────────────
     let selectedPaidBy = ME;
     paidBtns.forEach(btn => btn.addEventListener("click", () => {
       selectedPaidBy = btn.dataset.who;
@@ -325,7 +339,6 @@
     .balance-card{max-width:720px;margin:20px auto 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .balance-label{font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
     #balance-amt{font-size:28px;font-weight:500;letter-spacing:-.02em}
-    #balance-cad{font-size:13px;margin-top:4px;font-family:'DM Mono',monospace}
     #balance-lbl{font-size:13px;color:var(--dim);text-align:right}
     .content{max-width:720px;margin:0 auto;padding:24px 28px}
     .recurring-panel{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:24px}
@@ -393,7 +406,7 @@
       <div>
         <div class="balance-label">Current Balance (USD)</div>
         <div id="balance-amt" style="color:#94a3b8">&mdash;</div>
-        <div id="balance-cad" style="display:none"></div>
+        <div id="balance-cad" style="display:none;font-size:13px;margin-top:4px;font-family:'DM Mono',monospace;"></div>
       </div>
       <div id="balance-lbl" style="font-size:13px;color:#64748b">Loading&hellip;</div>
     </div>
@@ -401,15 +414,15 @@
 
   <div class="content">
     <div class="recurring-panel">
-      <div class="recurring-title">🔁 Recurring Transactions</div>
+      <div class="recurring-title">&#x1f501; Recurring Transactions</div>
       <div id="recurring-list"><div style="font-size:12px;color:#334155;padding:4px 0">Loading&hellip;</div></div>
     </div>
     <div id="filter-bar"></div>
     <div id="tx-list"><div class="empty">Connecting to database&hellip;</div></div>
     <div class="legend">
-      <span><span style="color:#4ade80">■</span> Paid by Chris</span>
-      <span><span style="color:#60a5fa">■</span> Paid by James</span>
-      <span><span style="color:#fbbf24">■</span> Auto-posted</span>
+      <span><span style="color:#4ade80">&#9632;</span> Paid by Chris</span>
+      <span><span style="color:#60a5fa">&#9632;</span> Paid by James</span>
+      <span><span style="color:#fbbf24">&#9632;</span> Auto-posted</span>
       <span style="color:#475569">All amounts in USD</span>
     </div>
   </div>
@@ -418,7 +431,7 @@
     <div class="modal-box">
       <div class="modal-header">
         <div class="modal-title">New Transaction</div>
-        <button class="btn-ghost" id="cancel-btn">✕</button>
+        <button class="btn-ghost" id="cancel-btn">&#x2715;</button>
       </div>
       <div class="two-col">
         <div class="field"><label>Date</label><input type="date" class="input" id="f-date"/></div>

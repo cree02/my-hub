@@ -38,6 +38,7 @@
     const fmtUSD  = n => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Math.abs(n));
     const fmtCAD  = n => new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD"}).format(Math.abs(n));
     const fmtDate = iso => new Date(iso+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const ordinal = n => { const s=["th","st","nd","rd"],v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); };
 
     // ── localStorage helper (safe — never throws) ────────
@@ -81,7 +82,7 @@
     const addBtn         = document.getElementById("add-btn");
     const cancelBtn      = document.getElementById("cancel-btn");
     const submitBtn      = document.getElementById("submit-btn");
-    const paidBtns       = document.querySelectorAll(".paid-toggle");
+    const paidBtns       = document.querySelectorAll("#modal .paid-toggle");
     const recurringEl    = document.getElementById("recurring-list");
     const currencySelect = document.getElementById("f-currency");
     const cadPreview     = document.getElementById("cad-preview");
@@ -175,20 +176,88 @@
       recurringList.forEach(r => {
         const div=document.createElement("div");
         div.className="recurring-row";
-        div.innerHTML='<div style="font-size:13px;color:#cbd5e1">'+r.description+'</div>'
+        div.innerHTML='<div style="flex:1;min-width:0"><div style="font-size:13px;color:#cbd5e1">'+esc(r.description)+'</div>'
           +'<div style="font-size:11px;color:#475569;margin-top:3px">'
-          +fmtUSD(r.amount)+' · paid by '+r.paidBy
-          +' · posts on the <strong style="color:#94a3b8">'+ordinal(r.dayOfMonth)+'</strong> of each month</div>';
+          +fmtUSD(r.amount)+' · paid by '+r.paidBy+' · '+(r.category||"Other")
+          +' · posts on the <strong style="color:#94a3b8">'+ordinal(r.dayOfMonth)+'</strong> of each month</div></div>'
+          +'<div class="rec-actions"><button class="rec-btn" data-act="edit">Edit</button>'
+          +'<button class="rec-btn rec-del" data-act="del">Delete</button></div>';
+        div.querySelector('[data-act="edit"]').addEventListener("click",()=>openRecModal(r));
+        div.querySelector('[data-act="del"]').addEventListener("click",()=>deleteRecurring(r));
         recurringEl.appendChild(div);
       });
     }
 
+    // ── Recurring create / edit / delete ──────────────────
+    const recModal   = document.getElementById("rec-modal");
+    const recSave    = document.getElementById("rec-save");
+    const recPaidBtns= document.querySelectorAll(".rec-paid");
+    let recEditing   = null;   // firebaseKey being edited, or null for new
+    let recPaidBy    = ME;
+    function setRecPaid(who){ recPaidBy=who; recPaidBtns.forEach(b=>b.classList.toggle("active",b.dataset.who===who)); }
+    recPaidBtns.forEach(b=>b.addEventListener("click",()=>setRecPaid(b.dataset.who)));
+
+    function openRecModal(r) {
+      recEditing = r ? r.firebaseKey : null;
+      document.getElementById("rec-modal-title").textContent = r ? "Edit Recurring" : "New Recurring";
+      document.getElementById("r-desc").value = r ? r.description : "";
+      document.getElementById("r-amt").value  = r ? parseFloat(r.amount).toFixed(2) : "";
+      document.getElementById("r-day").value  = r ? r.dayOfMonth : 1;
+      document.getElementById("r-cat").value  = r ? (r.category||"Other") : CATEGORIES[0];
+      setRecPaid(r ? r.paidBy : ME);
+      recSave.textContent = r ? "Save Changes" : "Add Recurring";
+      recModal.style.display = "flex";
+    }
+    function closeRecModal(){ recModal.style.display="none"; }
+    document.getElementById("rec-add-btn").addEventListener("click",()=>openRecModal(null));
+    document.getElementById("rec-cancel").addEventListener("click",closeRecModal);
+    document.getElementById("rec-cancel2").addEventListener("click",closeRecModal);
+    recModal.addEventListener("click",e=>{ if(e.target===recModal) closeRecModal(); });
+
+    recSave.addEventListener("click", async () => {
+      const description = document.getElementById("r-desc").value.trim();
+      const amount      = parseFloat(document.getElementById("r-amt").value);
+      const dayOfMonth  = parseInt(document.getElementById("r-day").value,10);
+      const category    = document.getElementById("r-cat").value;
+      if (!description || isNaN(amount) || amount<=0 || !(dayOfMonth>=1 && dayOfMonth<=28)) {
+        alert("Please enter a description, a valid amount, and a day between 1 and 28."); return;
+      }
+      recSave.disabled = true;
+      try {
+        const data = { description, amount:amount.toFixed(2), dayOfMonth, category, paidBy:recPaidBy };
+        if (recEditing) {
+          const existing = recurringList.find(x=>x.firebaseKey===recEditing) || {};
+          await set(ref(db,"recurring/"+recEditing), { ...data, id: existing.id || recEditing });
+        } else {
+          const newRef = push(ref(db,"recurring"));
+          await set(newRef, { ...data, id:newRef.key });
+          // If this month's posting day has already passed, start next month
+          // instead of back-posting immediately.
+          const now = new Date();
+          if (now.getDate() >= dayOfMonth) {
+            const mk = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+            await set(ref(db,"recurring_log/"+mk+"-"+newRef.key), { postedAt:now.toISOString(), skipped:true, description });
+          }
+        }
+        closeRecModal();
+      } catch(e) { alert("Failed to save. Check your connection."); }
+      recSave.disabled = false;
+    });
+
+    async function deleteRecurring(r) {
+      if (!confirm('Stop "'+r.description+'" from posting each month?\n\nPast transactions it already posted stay in the ledger.')) return;
+      await remove(ref(db,"recurring/"+r.firebaseKey));
+    }
+
+    let recurringBusy = false;
     async function processRecurring() {
+      if (recurringBusy) return; recurringBusy = true;
+      try {
       const now=new Date(), today=now.getDate(), year=now.getFullYear(), month=now.getMonth();
       const monthKey=year+"-"+String(month+1).padStart(2,"0");
       for (const r of recurringList) {
         if (today < r.dayOfMonth) continue;
-        const logRef = ref(db,"recurring_log/"+monthKey+"-"+r.id);
+        const logRef = ref(db,"recurring_log/"+monthKey+"-"+(r.id||r.firebaseKey));
         const snap   = await get(logRef);
         if (snap.exists()) continue;
         const dateStr = year+"-"+String(month+1).padStart(2,"0")+"-"+String(r.dayOfMonth).padStart(2,"0");
@@ -197,6 +266,7 @@
           currency:"USD",paidBy:r.paidBy,category:r.category,note:"",auto:true});
         await set(logRef,{postedAt:new Date().toISOString(),description});
       }
+      } finally { recurringBusy = false; }
     }
 
     // ── Seed / migrate recurring ──────────────────────────
@@ -207,13 +277,14 @@
       if (oldSnap.exists()) await remove(oldRef);
 
       const recurRef = ref(db,"recurring");
-      const snap = await get(recurRef);
-      if (snap.exists()) {
+      let first = true;
+      onValue(recurRef, async snap => {
         recurringList = [];
-        snap.forEach(child => recurringList.push({...child.val(),firebaseKey:child.key}));
-      }
-      renderRecurring();
-      await processRecurring();
+        snap.forEach(child => { recurringList.push({...child.val(),firebaseKey:child.key}); });
+        recurringList.sort((a,b)=>(a.dayOfMonth-b.dayOfMonth)||String(a.description).localeCompare(b.description));
+        renderRecurring();
+        if (first) { first = false; await processRecurring(); }
+      });
     }
 
     // ── Firebase listeners (reliable incremental pattern) ─
@@ -344,7 +415,14 @@
     .recurring-panel{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:24px}
     .recurring-title{font-size:10px;color:var(--dim);letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
     .recurring-title::after{content:"";flex:1;height:1px;background:var(--border)}
-    .recurring-row{padding:8px 0;border-bottom:1px solid var(--border)}
+    .recurring-row{padding:8px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+    .rec-actions{display:flex;gap:6px;flex-shrink:0}
+    .rec-btn{background:transparent;border:1px solid var(--border2);color:var(--subtle);padding:3px 9px;border-radius:4px;cursor:pointer;font-family:'DM Mono',monospace;font-size:10px}
+    .rec-btn:hover{border-color:var(--blue);color:var(--blue-lt)}
+    .rec-del:hover{border-color:var(--red);color:var(--red)}
+    .rec-add{margin-left:auto;order:2;background:transparent;border:1px solid var(--border2);color:var(--blue-lt);padding:3px 10px;border-radius:12px;cursor:pointer;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.05em;text-transform:none}
+    .rec-add:hover{border-color:var(--blue)}
+    #rec-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px);padding:20px}
     .recurring-row:last-child{border-bottom:none}
     #filter-bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:20px}
     .filter-pill{background:transparent;border:1px solid var(--border2);color:var(--dim);padding:5px 12px;border-radius:20px;cursor:pointer;font-family:'DM Mono',monospace;font-size:11px;white-space:nowrap;transition:all .15s}
@@ -414,7 +492,7 @@
 
   <div class="content">
     <div class="recurring-panel">
-      <div class="recurring-title">&#x1f501; Recurring Transactions</div>
+      <div class="recurring-title">&#x1f501; Recurring Transactions<button class="rec-add" id="rec-add-btn">+ Add</button></div>
       <div id="recurring-list"><div style="font-size:12px;color:#334155;padding:4px 0">Loading&hellip;</div></div>
     </div>
     <div id="filter-bar"></div>
@@ -464,6 +542,36 @@
       <div class="modal-footer">
         <button class="btn-ghost" onclick="document.getElementById('modal').style.display='none'">Cancel</button>
         <button class="btn-primary" id="submit-btn" style="flex:2">Add Transaction</button>
+      </div>
+    </div>
+  </div>
+  <div id="rec-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="rec-modal-title">New Recurring</div>
+        <button class="btn-ghost" id="rec-cancel">&#x2715;</button>
+      </div>
+      <div class="field"><label>Description</label><input type="text" class="input" id="r-desc" placeholder="e.g. Phone bill"/></div>
+      <div class="two-col">
+        <div class="field"><label>Amount (USD)</label><input type="number" class="input" id="r-amt" placeholder="0.00" step="0.01" min="0"/></div>
+        <div class="field"><label>Day of Month</label><input type="number" class="input" id="r-day" min="1" max="28" value="1"/></div>
+      </div>
+      <div class="field"><label>Category</label>
+        <select class="select" id="r-cat">
+          <option>Phone</option><option>Food</option><option>Gas</option>
+          <option>Groceries</option><option>Entertainment</option><option>Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Paid By</label>
+        <div class="toggle-group">
+          <button class="paid-toggle rec-paid" data-who="Chris">Chris</button>
+          <button class="paid-toggle rec-paid" data-who="James">James</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#475569;margin-top:-4px">Posts automatically each month on that day. Days 1&ndash;28 so it works in every month.</div>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="rec-cancel2">Cancel</button>
+        <button class="btn-primary" id="rec-save" style="flex:2">Add Recurring</button>
       </div>
     </div>
   </div>
